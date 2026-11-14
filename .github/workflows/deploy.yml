@@ -1,0 +1,50 @@
+# Continuous deploy: on push to the main branch, SSH into the Oracle VM and run
+# update.sh, which git-pulls the new code and restarts the services.
+#
+# IMPORTANT (honest caveats):
+#   - The VM pulls the code itself via git; this job only triggers that pull over
+#     SSH. No source is copied from the runner, so the VM stays the source of
+#     truth and your .env / data/ are never touched.
+#   - Requires four repository secrets (Settings -> Secrets and variables ->
+#     Actions). See docs/ORACLE_DEPLOYMENT.md "Push-to-deploy" for setup:
+#       DEPLOY_SSH_HOST  - VM public IP or hostname
+#       DEPLOY_SSH_USER  - the deploy user on the VM (e.g. "deploy" or "ubuntu")
+#       DEPLOY_SSH_KEY   - the PRIVATE SSH key whose public half is on the VM
+#       DEPLOY_SSH_PORT  - SSH port (optional; defaults to 22)
+#   - The deploy user needs passwordless sudo for update.sh ONLY (sudoers snippet
+#     in the docs), because SSH sessions are non-interactive.
+
+name: deploy
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to deploy on the VM (defaults to main)"
+        required: false
+        default: "main"
+
+# Never run two deploys at once; cancel older in-flight runs.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
+          command_timeout: "15m"
+          script_stop: true
+          # ${{ github.event.inputs.branch }} is set only on manual dispatch;
+          # on push it is empty and update.sh pulls the current VM branch.
+          script: |
+            sudo /opt/aevrix/deploy/oracle/update.sh ${{ github.event.inputs.branch }}

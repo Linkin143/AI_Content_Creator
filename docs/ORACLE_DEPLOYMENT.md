@@ -179,6 +179,74 @@ those tokens.
 - **Env changes don't hot-reload** (settings are cached) — always
   `systemctl restart` the affected service after editing `.env`.
 
+---
+
+## Push-to-deploy (GitHub Actions → VM)
+
+Automate the update: every push to `main` makes GitHub Actions SSH into the VM
+and run `update.sh`. The workflow is `.github/workflows/deploy.yml`. The VM pulls
+the code itself over git — the runner only triggers it — so your `.env`/`data/`
+are never touched.
+
+### 1. Create a dedicated deploy user on the VM
+
+Keep this account SEPARATE from the `aevrix` service user (so it can't edit the
+script it's allowed to sudo):
+
+```bash
+sudo useradd --create-home --shell /bin/bash deploy
+```
+
+### 2. Add an SSH key for the deploy user
+
+Generate a dedicated keypair (do this on your machine, no passphrase so CI can
+use it non-interactively):
+
+```bash
+ssh-keygen -t ed25519 -f aevrix_deploy -C "github-actions-deploy" -N ""
+```
+
+Put the **public** half on the VM:
+
+```bash
+sudo -u deploy mkdir -p /home/deploy/.ssh && sudo -u deploy chmod 700 /home/deploy/.ssh
+# paste the contents of aevrix_deploy.pub:
+sudo -u deploy tee -a /home/deploy/.ssh/authorized_keys < aevrix_deploy.pub
+sudo -u deploy chmod 600 /home/deploy/.ssh/authorized_keys
+```
+
+### 3. Allow passwordless sudo for update.sh only
+
+```bash
+sudo cp /opt/aevrix/deploy/oracle/sudoers-deploy /etc/sudoers.d/aevrix-deploy
+sudo chmod 440 /etc/sudoers.d/aevrix-deploy
+sudo visudo -c                 # must report "parsed OK"
+```
+
+(The snippet assumes the user is `deploy`; edit the file if yours differs.)
+
+### 4. Add GitHub repository secrets
+
+Repo → **Settings → Secrets and variables → Actions → New repository secret**:
+
+| Secret | Value |
+|---|---|
+| `DEPLOY_SSH_HOST` | VM public IP (or hostname) |
+| `DEPLOY_SSH_USER` | `deploy` |
+| `DEPLOY_SSH_KEY` | full contents of the **private** key `aevrix_deploy` |
+| `DEPLOY_SSH_PORT` | `22` (optional) |
+
+### 5. Test it
+
+- **Manual:** Actions tab → **deploy** → **Run workflow** (optionally pick a
+  branch). Watch the log for the `update.sh` output + health check.
+- **Automatic:** push any commit to `main`.
+
+> Security notes: the deploy key is SSH-only and the deploy user can run exactly
+> one root command. Also restrict SSH ingress — in Oracle's Security List, prefer
+> limiting port 22 to known IPs, or use GitHub's published Actions IP ranges.
+> Never commit the private key; it lives only in the GitHub secret.
+
 ## Troubleshooting
 
 - **`database is locked`** → ensure only ONE `aevrix-scheduler` runs against the DB.

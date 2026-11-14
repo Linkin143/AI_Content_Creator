@@ -1,0 +1,17 @@
+# AEVRIX push-to-deploy sudoers rule.
+# Lets the CI deploy user run ONLY the update script without a password, so the
+# non-interactive GitHub Actions SSH session can restart services.
+#
+# Install (replace "deploy" if your deploy user differs):
+#   sudo cp /opt/aevrix/deploy/oracle/sudoers-deploy /etc/sudoers.d/aevrix-deploy
+#   sudo sed -i 's/^deploy /<your-user> /' /etc/sudoers.d/aevrix-deploy   # if needed
+#   sudo chmod 440 /etc/sudoers.d/aevrix-deploy
+#   sudo visudo -c   # validate syntax before trusting it
+#
+# Security: this grants passwordless root for EXACTLY one command path. For it to
+# be safe, the deploy user MUST NOT be able to edit update.sh (or it could put
+# arbitrary root commands in it). That is already true when the deploy user is a
+# SEPARATE account from "aevrix" (which owns the repo): /opt/aevrix is owned by
+# aevrix:aevrix, so the deploy user has no write access. Do NOT make the deploy
+# user a member of the aevrix group, and do NOT reuse the aevrix user for deploy.
+deploy ALL=(root) NOPASSWD: /opt/aevrix/deploy/oracle/update.sh, /opt/aevrix/deploy/oracle/update.sh *
