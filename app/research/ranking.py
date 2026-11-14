@@ -32,18 +32,24 @@ _TECH_TERMS = {
     "python", "javascript", "typescript", "react", "node", "api", "framework",
     "open-source", "opensource", "release", "benchmark", "gpu", "training",
     "inference", "fine-tune", "transformer", "automation", "testing",
+    # business / deals / geopolitics tech signals
+    "funding", "acquisition", "merger", "ipo", "valuation", "chip", "semiconductor",
+    "cloud", "data center", "datacenter", "robotics", "quantum", "cybersecurity",
 }
 _ENGINEERING_TERMS = {
     "release", "launch", "version", "sdk", "library", "tool", "update",
     "deprecated", "breaking", "performance", "architecture", "security",
+    "partnership", "deal", "investment", "raise", "round", "billion", "million",
 }
 _AUDIENCE_TERMS = {
     "developer", "engineer", "startup", "founder", "india", "indian",
-    "enterprise", "business", "product",
+    "enterprise", "business", "product", "market", "economy", "regulation",
+    "policy", "government", "global", "trade", "sanctions",
 }
 _INSIGHT_TERMS = {
     "how", "why", "lessons", "guide", "deep", "explained", "analysis",
-    "comparison", "tutorial", "case study",
+    "comparison", "tutorial", "case study", "report", "trend", "impact",
+    "strategy", "outlook",
 }
 
 

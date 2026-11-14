@@ -27,14 +27,25 @@ async def create_db_and_tables() -> None:
 async def seed_initial_data() -> dict[str, int]:
     """Seed the default source registry and a default brand profile."""
     added_sources = 0
+    deactivated = 0
     async with async_session_factory() as session:
         # Seed sources (idempotent by name).
-        existing = (await session.execute(select(Source.name))).scalars().all()
-        existing_names = set(existing)
+        existing_rows = (await session.execute(select(Source))).scalars().all()
+        existing_names = {s.name for s in existing_rows}
+        seed_names = {src["name"] for src in DEFAULT_SOURCES}
         for src in DEFAULT_SOURCES:
             if src["name"] not in existing_names:
                 session.add(Source(**src))
                 added_sources += 1
+
+        # Deactivate DB sources that are no longer in the seed (e.g. dead feeds
+        # that were renamed/replaced). We deactivate rather than delete so any
+        # historical articles keep their foreign key.
+        for row in existing_rows:
+            if row.name not in seed_names and row.active:
+                row.active = False
+                session.add(row)
+                deactivated += 1
 
         # Seed one brand profile if none exists.
         profile = (await session.execute(select(BrandProfile))).scalars().first()
@@ -42,7 +53,7 @@ async def seed_initial_data() -> dict[str, int]:
             session.add(_default_brand_profile())
 
         await session.commit()
-    return {"sources_added": added_sources}
+    return {"sources_added": added_sources, "sources_deactivated": deactivated}
 
 
 def _default_brand_profile() -> BrandProfile:

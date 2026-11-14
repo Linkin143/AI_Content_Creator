@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict
+from datetime import UTC
 
 from app.agents.llm_helpers import call_structured
 from app.agents.state import ContentPipelineState
@@ -71,10 +72,25 @@ async def discover_news(state: ContentPipelineState) -> dict:
         for art in res.articles:
             raw.append(asdict(art))
 
-    max_articles = state.get("max_articles", 50)
-    raw = raw[:max_articles]
+    # Keep the newest items across ALL sources before dedup, so we don't let a
+    # few large feeds crowd out everything else. Sort by publish date (newest
+    # first; undated items last) and keep a generous working set.
+    from datetime import datetime
+    _MIN_DT = datetime.min.replace(tzinfo=UTC)
+
+    def _pub_key(d: dict):
+        dt = d.get("published_at")
+        return dt if isinstance(dt, datetime) else _MIN_DT
+    raw.sort(key=_pub_key, reverse=True)
+
+    # Cap the pre-dedup working set generously (not the final post count). This
+    # is bounded to protect memory, but far above MAX_ARTICLES_PER_RUN so fresh
+    # stories are not starved by already-seen ones.
+    working_cap = max(state.get("max_articles", 50) * 20, 500)
+    raw = raw[:working_cap]
     return {"raw_articles": raw, "metadata": {**state.get("metadata", {}),
-                                              "sources_count": len(sources)}}
+                                              "sources_count": len(sources),
+                                              "fetched": len(raw)}}
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +133,10 @@ async def filter_freshness(state: ContentPipelineState) -> dict:
     deduped = [_to_raw(d) for d in state.get("deduplicated", [])]
     window = state.get("research_window_hours", 24)
     fresh = filter_by_freshness(deduped, window)
+    # Now bound the fresh set to MAX_ARTICLES_PER_RUN - this is what controls how
+    # many stories enter the (potentially LLM-backed) research/rank stages.
+    cap = state.get("max_articles", 50)
+    fresh = fresh[:cap]
     return {"fresh": [asdict(a) for a in fresh]}
 
 

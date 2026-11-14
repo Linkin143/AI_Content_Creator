@@ -22,10 +22,19 @@ def sign(payload: str) -> str:
     return hmac.new(_secret(), payload.encode(), hashlib.sha256).hexdigest()
 
 
+# Telegram limits callback_data to 64 BYTES. A full SHA-256 hex sig (64 chars)
+# alone exceeds that, so for callback tokens we use a truncated HMAC. 16 hex
+# chars = 64 bits of authentication, ample to stop forged/stale buttons.
+_CB_SIG_LEN = 16
+
+
 def make_callback_token(draft_id: int, version: int, action: str) -> str:
-    """Build a signed callback token: draftid:version:action:sig."""
+    """Build a compact signed callback token: draftid:version:action:sig16.
+
+    Stays well under Telegram's 64-byte callback_data limit.
+    """
     payload = f"{draft_id}:{version}:{action}"
-    return f"{payload}:{sign(payload)}"
+    return f"{payload}:{sign(payload)[:_CB_SIG_LEN]}"
 
 
 def verify_callback_token(token: str) -> tuple[int, int, str] | None:
@@ -35,7 +44,7 @@ def verify_callback_token(token: str) -> tuple[int, int, str] | None:
         return None
     draft_id_s, version_s, action, sig = parts
     payload = f"{draft_id_s}:{version_s}:{action}"
-    if not hmac.compare_digest(sig, sign(payload)):
+    if not hmac.compare_digest(sig, sign(payload)[:_CB_SIG_LEN]):
         return None
     if not (draft_id_s.isdigit() and version_s.isdigit()):
         return None

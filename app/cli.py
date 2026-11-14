@@ -31,8 +31,10 @@ def init_db() -> None:
     async def _run() -> None:
         await create_db_and_tables()
         result = await seed_initial_data()
-        console.print(f"[green]Database initialized.[/green] Seeded "
-                      f"{result['sources_added']} new sources.")
+        console.print(
+            f"[green]Database initialized.[/green] Seeded "
+            f"{result['sources_added']} new sources, deactivated "
+            f"{result.get('sources_deactivated', 0)} stale ones.")
 
     asyncio.run(_run())
 
