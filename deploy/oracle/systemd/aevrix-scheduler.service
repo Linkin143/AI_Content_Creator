@@ -1,0 +1,23 @@
+[Unit]
+# AEVRIX scheduler: research at 08:00 IST + due publications.
+# IMPORTANT: run exactly ONE instance to avoid SQLite "database is locked".
+Description=AEVRIX Scheduler (APScheduler)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aevrix
+Group=aevrix
+WorkingDirectory=/opt/aevrix
+EnvironmentFile=/opt/aevrix/.env
+ExecStart=/opt/aevrix/.venv/bin/python -m app.cli run-scheduler
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/aevrix/data /opt/aevrix/logs
+
+[Install]
+WantedBy=multi-user.target

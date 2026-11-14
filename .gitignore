@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+# Example templates must stay tracked even though they match .env.*
+!*.env.production.example
+!deploy/oracle/.env.production.example
 
 # Data & logs (persistent local state - never commit)
 data/*.db

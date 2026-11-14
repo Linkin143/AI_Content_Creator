@@ -1,0 +1,11 @@
+[Unit]
+# One-shot WAL-safe SQLite backup. Triggered by aevrix-backup.timer.
+Description=AEVRIX daily SQLite backup
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=aevrix
+Group=aevrix
+WorkingDirectory=/opt/aevrix
+ExecStart=/opt/aevrix/deploy/oracle/backup.sh

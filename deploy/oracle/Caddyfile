@@ -1,0 +1,25 @@
+# ---------------------------------------------------------------------------
+# AEVRIX reverse proxy with automatic HTTPS (Let's Encrypt).
+# Caddy fetches + renews certs automatically. Replace the domain below.
+#
+# Requirements:
+#   - A DNS A record pointing your domain at the VM's public IP.
+#   - Oracle Security List + ufw allow TCP 80 and 443.
+#
+# Why a domain? X and LinkedIn OAuth callbacks must be HTTPS on a stable host.
+# Free domain options: a DuckDNS subdomain (yourname.duckdns.org) works fine.
+# ---------------------------------------------------------------------------
+
+aevrix.example.com {
+    encode zstd gzip
+
+    # API + OAuth callbacks (/auth/x/callback, /auth/linkedin/callback, /health)
+    reverse_proxy 127.0.0.1:8000
+}
+
+# Optional: expose the Streamlit dashboard on a separate subdomain.
+# Point a second DNS record (e.g. dash.aevrix.example.com) at the VM first.
+dash.aevrix.example.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8501
+}

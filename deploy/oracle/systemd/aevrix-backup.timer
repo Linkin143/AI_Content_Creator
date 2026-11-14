@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AEVRIX SQLite backup daily
+
+[Timer]
+# 02:30 local VM time every day; catches up if the VM was off.
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
