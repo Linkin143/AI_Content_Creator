@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# Git-based deploy: pull latest code into /opt/aevrix, reinstall deps,
-# reinstall unit files, restart services. Run from a sudo-capable user.
+# Git-based deploy: check out a ref into /opt/aevrix, reinstall deps, reinstall
+# unit files, restart services. Run from a sudo-capable user.
 #
-#   sudo /opt/aevrix/deploy/oracle/update.sh            # pull current branch
-#   sudo /opt/aevrix/deploy/oracle/update.sh main       # pull a specific branch
+#   sudo /opt/aevrix/deploy/oracle/update.sh            # update current branch
+#   sudo /opt/aevrix/deploy/oracle/update.sh v1.2.0     # deploy a TAG (recommended)
+#   sudo /opt/aevrix/deploy/oracle/update.sh main       # deploy a branch tip
+#   sudo /opt/aevrix/deploy/oracle/update.sh <sha>      # deploy an exact commit
 #
+# The ref may be a tag, a branch, or a commit SHA — it is resolved accordingly.
 # /opt/aevrix must be a git checkout (oracle_setup.sh clones it for you).
 # Your .env, data/ and logs/ are untracked, so they are never touched.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 APP_USER="aevrix"
 APP_DIR="/opt/aevrix"
-BRANCH="${1:-}"
+REF="${1:-}"
 
 cd "${APP_DIR}"
 
@@ -24,16 +27,39 @@ fi
 
 # Mark the dir safe for root running git on an aevrix-owned repo.
 git config --global --add safe.directory "${APP_DIR}" 2>/dev/null || true
+GIT=(sudo -u "${APP_USER}" git -C "${APP_DIR}")
 
-echo "==> Fetching latest code..."
-sudo -u "${APP_USER}" git -C "${APP_DIR}" fetch --prune origin
-if [[ -n "${BRANCH}" ]]; then
-  sudo -u "${APP_USER}" git -C "${APP_DIR}" checkout "${BRANCH}"
+echo "==> Fetching latest code (branches + tags)..."
+"${GIT[@]}" fetch --prune --tags --force origin
+
+if [[ -z "${REF}" ]]; then
+  # No ref given: update the currently checked-out branch to its remote tip.
+  REF="$(git -C "${APP_DIR}" rev-parse --abbrev-ref HEAD)"
+  echo "==> No ref given; using current branch '${REF}'."
 fi
-CURRENT_BRANCH="$(git -C "${APP_DIR}" rev-parse --abbrev-ref HEAD)"
-echo "==> Pulling origin/${CURRENT_BRANCH}..."
-# Hard reset to remote so local .sh permission/mode noise never blocks a pull.
-sudo -u "${APP_USER}" git -C "${APP_DIR}" reset --hard "origin/${CURRENT_BRANCH}"
+
+# Resolve the ref to a concrete commit, preferring (in order):
+#   remote branch origin/<REF>  ->  tag <REF>  ->  raw commit/ref <REF>
+if git -C "${APP_DIR}" rev-parse --verify --quiet "refs/remotes/origin/${REF}^{commit}" >/dev/null; then
+  TARGET="origin/${REF}"
+  echo "==> Deploying branch '${REF}' (${TARGET})."
+elif git -C "${APP_DIR}" rev-parse --verify --quiet "refs/tags/${REF}^{commit}" >/dev/null; then
+  TARGET="refs/tags/${REF}"
+  echo "==> Deploying tag '${REF}'."
+elif git -C "${APP_DIR}" rev-parse --verify --quiet "${REF}^{commit}" >/dev/null; then
+  TARGET="${REF}"
+  echo "==> Deploying commit/ref '${REF}'."
+else
+  echo "ERROR: ref '${REF}' not found as a branch, tag, or commit on origin."
+  exit 1
+fi
+
+echo "==> Checking out ${TARGET}..."
+# Hard reset so local .sh mode/permission noise never blocks the checkout.
+# (Detached HEAD on a tag/commit is expected and fine for deployment.)
+"${GIT[@]}" checkout --quiet --force --detach "${TARGET}"
+"${GIT[@]}" reset --hard "${TARGET}"
+echo "==> Now at: $(git -C "${APP_DIR}" rev-parse --short HEAD)"
 
 echo "==> Reinstalling dependencies..."
 sudo -u "${APP_USER}" "${APP_DIR}/.venv/bin/pip" install -e "${APP_DIR}[providers]"

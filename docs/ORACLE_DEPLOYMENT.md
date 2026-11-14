@@ -169,11 +169,11 @@ those tokens.
 
 - **Logs:** `journalctl -u aevrix-<service> -n 100 --no-pager`
 - **Restart one:** `sudo systemctl restart aevrix-bot`
-- **Deploy new code (git):** push to your remote, then on the VM run
-  `sudo /opt/aevrix/deploy/oracle/update.sh` (or `… update.sh <branch>`). It
-  fetches, hard-resets to `origin`, reinstalls deps + unit files, restarts
-  services, and health-checks. Your `.env` and `data/` are untracked, so a pull
-  never touches secrets or the DB.
+- **Deploy new code (git):** on the VM run `sudo /opt/aevrix/deploy/oracle/update.sh <ref>`
+  where `<ref>` is a **tag** (`v1.2.0`, recommended), a branch, or a commit SHA
+  (omit to update the current branch). It fetches, checks out that exact ref,
+  reinstalls deps + unit files, restarts services, and health-checks. Your `.env`
+  and `data/` are untracked, so a deploy never touches secrets or the DB.
 - **Backups:** daily at 02:30 VM time → `/opt/aevrix/data/backups/` (last 14
   kept). Run on demand: `sudo systemctl start aevrix-backup.service`
 - **Env changes don't hot-reload** (settings are cached) — always
@@ -183,10 +183,15 @@ those tokens.
 
 ## Push-to-deploy (GitHub Actions → VM)
 
-Automate the update: every push to `main` makes GitHub Actions SSH into the VM
-and run `update.sh`. The workflow is `.github/workflows/deploy.yml`. The VM pulls
-the code itself over git — the runner only triggers it — so your `.env`/`data/`
-are never touched.
+Automate releases: pushing a **version tag** (`vX.Y.Z`) makes GitHub Actions SSH
+into the VM and run `update.sh` for that exact tag. The workflow is
+`.github/workflows/deploy.yml`. The VM pulls the code itself over git — the runner
+only triggers it — so your `.env`/`data/` are never touched.
+
+> **Why tags, not every push?** AEVRIX is one live, always-on instance. Tag-based
+> deploys keep `main` a free iteration branch and make shipping a deliberate act
+> (a bad commit on `main` won't restart your live bot/scheduler). You still get a
+> **Run workflow** button to deploy any branch/commit on demand.
 
 ### 1. Create a dedicated deploy user on the VM
 
@@ -238,9 +243,17 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 
 ### 5. Test it
 
-- **Manual:** Actions tab → **deploy** → **Run workflow** (optionally pick a
-  branch). Watch the log for the `update.sh` output + health check.
-- **Automatic:** push any commit to `main`.
+- **Release (automatic):** tag a commit and push the tag:
+  ```bash
+  git tag v0.1.0
+  git push origin v0.1.0
+  ```
+  The `deploy` workflow runs and deploys exactly `v0.1.0` on the VM.
+- **On-demand (manual):** Actions tab → **deploy** → **Run workflow**; optionally
+  type a ref (tag, branch, or commit SHA) to deploy. Leave it blank to update the
+  VM's current branch.
+- **Rollback:** deploy an older tag — Run workflow with `v0.1.0`, or on the VM
+  `sudo /opt/aevrix/deploy/oracle/update.sh v0.1.0`.
 
 > Security notes: the deploy key is SSH-only and the deploy user can run exactly
 > one root command. Also restrict SSH ingress — in Oracle's Security List, prefer
