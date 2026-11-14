@@ -1,0 +1,45 @@
+# Optional: best-effort scheduled research via GitHub Actions.
+#
+# IMPORTANT caveats (documented honestly):
+#   - GitHub Actions cron is BEST-EFFORT; it is not guaranteed to run on time.
+#   - A GitHub runner is ephemeral and CANNOT access a SQLite DB stored only on
+#     your laptop. If you use this, point DATABASE_URL at durable external
+#     storage (e.g. a hosted Postgres) or commit/sync the DB artifact yourself.
+#   - Secrets must be provided via GitHub repository secrets, never committed.
+#
+# For most users a reliable local machine / mini-PC running `run-scheduler`
+# is preferable to this workflow.
+
+name: scheduled-research
+
+on:
+  schedule:
+    - cron: "30 2 * * *"   # 02:30 UTC == 08:00 IST (approximate; best-effort)
+  workflow_dispatch: {}
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Run research
+        env:
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
+          APP_SESSION_SECRET: ${{ secrets.APP_SESSION_SECRET }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.TELEGRAM_ALLOWED_USER_IDS }}
+        run: |
+          python -m app.cli init-db
+          python -m app.cli research

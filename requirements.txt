@@ -1,0 +1,52 @@
+# AEVRIX Content Intelligence Engine - pip requirements (mirror of pyproject).
+# For reproducible installs prefer: uv pip install -e .
+# These pins are lower-bounds; see pyproject.toml for the source of truth.
+
+# Core
+pydantic>=2.7
+pydantic-settings>=2.3
+python-dotenv>=1.0
+typer>=0.12
+rich>=13.7
+
+# Web / API
+fastapi>=0.111
+uvicorn[standard]>=0.30
+httpx>=0.27
+
+# Dashboard
+streamlit>=1.37
+plotly>=5.22
+
+# Database
+sqlmodel>=0.0.21
+sqlalchemy>=2.0
+aiosqlite>=0.20
+greenlet>=3.0
+
+# LLM / Agents
+langchain>=0.2
+langchain-core>=0.2
+langgraph>=0.2
+langgraph-checkpoint-sqlite>=1.0
+
+# Research
+feedparser>=6.0
+beautifulsoup4>=4.12
+lxml>=5.2
+
+# Integrations
+python-telegram-bot>=21.0
+
+# Scheduling
+apscheduler>=3.10
+
+# Security
+cryptography>=42.0
+tenacity>=8.4
+
+# ----------------------------------------------------------------------------
+# Optional LLM providers (install when you use them):
+#   pip install langchain-ollama langchain-openai langchain-google-genai langchain-groq
+# Dev tooling:
+#   pip install pytest pytest-asyncio pytest-httpx ruff

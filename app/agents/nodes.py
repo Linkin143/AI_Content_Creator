@@ -1,0 +1,426 @@
+"""LangGraph node implementations for the content pipeline.
+
+Each node is an async function taking the pipeline state and returning a partial
+state update. Nodes never raise to the graph: failures are captured in
+state['errors'] so one failing source/story cannot abort the whole run.
+
+Deterministic Python is used wherever an LLM is not required. LLM steps degrade
+gracefully: if no provider is available they fall back to non-AI behaviour and
+set llm_available=False.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import asdict
+
+from app.agents.llm_helpers import call_structured
+from app.agents.state import ContentPipelineState
+from app.config import get_settings
+from app.database import repositories as repo
+from app.research import rss
+from app.research.deduplicate import deduplicate, filter_by_freshness
+from app.research.ranking import rank_stories, select_diverse
+from app.research.rss import RawArticle
+from app.schemas.content import (
+    LinkedInPostOutput,
+    QualityReview,
+    TechnicalAnalysis,
+    VerificationOutput,
+    XPostOutput,
+)
+from app.security.sanitization import wrap_untrusted
+from skills import load_skill
+
+logger = logging.getLogger("aevrix.nodes")
+
+
+def _to_raw(d: dict) -> RawArticle:
+    return RawArticle(**d)
+
+
+def _add_error(state: ContentPipelineState, node: str, error: str) -> list[dict]:
+    errors = list(state.get("errors", []))
+    errors.append({"node": node, "error": error})
+    logger.warning("node=%s error=%s", node, error)
+    return errors
+
+
+# ---------------------------------------------------------------------------
+# 1. discover_news + collect + normalize  (deterministic)
+# ---------------------------------------------------------------------------
+async def discover_news(state: ContentPipelineState) -> dict:
+    try:
+        sources = await repo.list_active_sources()
+    except Exception as exc:
+        return {"raw_articles": [], "errors": _add_error(state, "discover_news", str(exc))}
+
+    if not sources:
+        return {"raw_articles": [], "errors": _add_error(
+            state, "discover_news", "no active sources configured")}
+
+    results = await rss.fetch_all(sources)
+    raw: list[dict] = []
+    for res in results:
+        if res.error:
+            if res.source_id:
+                await repo.mark_source_fetched(res.source_id, res.error)
+            continue
+        if res.source_id:
+            await repo.mark_source_fetched(res.source_id, None)
+        for art in res.articles:
+            raw.append(asdict(art))
+
+    max_articles = state.get("max_articles", 50)
+    raw = raw[:max_articles]
+    return {"raw_articles": raw, "metadata": {**state.get("metadata", {}),
+                                              "sources_count": len(sources)}}
+
+
+# ---------------------------------------------------------------------------
+# 2. deduplicate (deterministic, DB-aware)
+# ---------------------------------------------------------------------------
+async def deduplicate_stories(state: ContentPipelineState) -> dict:
+    raw = [_to_raw(d) for d in state.get("raw_articles", [])]
+    try:
+        known_urls, known_fps = await repo.existing_article_keys()
+    except Exception:
+        known_urls, known_fps = set(), set()
+    deduped = deduplicate(raw, known_urls, known_fps)
+
+    # Persist newly-seen articles so cross-run dedup and the dashboard work.
+    for art in deduped:
+        try:
+            await repo.save_article({
+                "source_id": art.source_id,
+                "title": art.title,
+                "publisher": art.publisher,
+                "url": art.url,
+                "canonical_url": art.canonical_url,
+                "summary": art.summary,
+                "content_snippet": art.summary,
+                "published_at": art.published_at,
+                "category": art.category,
+                "region": art.region,
+                "content_fingerprint": art.fingerprint,
+            })
+        except Exception as exc:  # non-fatal; keep pipeline going
+            logger.warning("save_article failed: %s", exc)
+
+    return {"deduplicated": [asdict(a) for a in deduped]}
+
+
+# ---------------------------------------------------------------------------
+# 3. filter_by_freshness (deterministic)
+# ---------------------------------------------------------------------------
+async def filter_freshness(state: ContentPipelineState) -> dict:
+    deduped = [_to_raw(d) for d in state.get("deduplicated", [])]
+    window = state.get("research_window_hours", 24)
+    fresh = filter_by_freshness(deduped, window)
+    return {"fresh": [asdict(a) for a in fresh]}
+
+
+# ---------------------------------------------------------------------------
+# 4. research_stories (LLM optional - extracts claims)
+# ---------------------------------------------------------------------------
+async def research_stories(state: ContentPipelineState) -> dict:
+    fresh = state.get("fresh", [])
+    skill = load_skill("article_research")
+    researched: list[dict] = []
+    llm_calls = state.get("llm_calls", 0)
+    settings = get_settings()
+    limit = settings.max_llm_calls_per_run
+
+    for item in fresh:
+        enriched = dict(item)
+        # Only spend LLM calls on a bounded number of stories.
+        if llm_calls < limit:
+            content = wrap_untrusted(f"{item.get('title','')}\n{item.get('summary','')}")
+            from app.schemas.content import ExtractedClaims
+            result = await call_structured(skill.instructions, content, ExtractedClaims)
+            if result is not None:
+                enriched["key_claims"] = result.key_claims
+                enriched["research_summary"] = result.summary
+                enriched["entities"] = result.entities
+                llm_calls += 1
+        enriched.setdefault("key_claims", [])
+        enriched.setdefault("research_summary", item.get("summary", ""))
+        researched.append(enriched)
+
+    return {"researched": researched, "llm_calls": llm_calls,
+            "llm_available": llm_calls > state.get("llm_calls", 0) or state.get("llm_available", False)}
+
+
+# ---------------------------------------------------------------------------
+# 5. verify_claims (LLM optional - defaults to REQUIRES_REVIEW without AI)
+# ---------------------------------------------------------------------------
+async def verify_claims(state: ContentPipelineState) -> dict:
+    researched = state.get("researched", [])
+    skill = load_skill("fact_verification")
+    verified: list[dict] = []
+    llm_calls = state.get("llm_calls", 0)
+    limit = get_settings().max_llm_calls_per_run
+
+    for item in researched:
+        enriched = dict(item)
+        status = "REQUIRES_REVIEW"
+        confidence = 0.0
+        notes = "No AI verification performed; manual review recommended."
+        supporting = [item.get("url", "")] if item.get("url") else []
+
+        if llm_calls < limit:
+            claims = "\n".join(item.get("key_claims", [])) or item.get("summary", "")
+            content = wrap_untrusted(
+                f"Title: {item.get('title','')}\nPublisher: {item.get('publisher','')}\n"
+                f"URL: {item.get('url','')}\nClaims:\n{claims}"
+            )
+            result = await call_structured(skill.instructions, content, VerificationOutput)
+            if result is not None:
+                status = result.status
+                confidence = result.confidence
+                notes = result.editorial_notes
+                supporting = result.supporting_sources or supporting
+                llm_calls += 1
+
+        enriched["verification_status"] = status
+        enriched["verification_confidence"] = confidence
+        enriched["verification_notes"] = notes
+        enriched["supporting_sources"] = supporting
+        verified.append(enriched)
+
+    return {"verified": verified, "llm_calls": llm_calls}
+
+
+# ---------------------------------------------------------------------------
+# 6. rank_stories (deterministic weighted scoring)
+# ---------------------------------------------------------------------------
+async def rank_stories_node(state: ContentPipelineState) -> dict:
+    verified = state.get("verified", [])
+    raw = [_to_raw({k: v for k, v in item.items() if k in RawArticle.__annotations__})
+           for item in verified]
+    window = state.get("research_window_hours", 24)
+    scored = rank_stories(raw, window_hours=window)
+
+    # Merge scores back, preserving verification fields by matching URL.
+    by_url = {item.get("url"): item for item in verified}
+    ranked: list[dict] = []
+    for s in scored:
+        base = dict(by_url.get(s.article.url, {}))
+        base.update({
+            "score": s.score,
+            "technical_relevance": s.technical_relevance,
+            "engineering_significance": s.engineering_significance,
+            "freshness": s.freshness,
+            "audience_relevance": s.audience_relevance,
+            "insight_opportunity": s.insight_opportunity,
+            "rationale": s.rationale,
+        })
+        ranked.append(base)
+    return {"ranked": ranked}
+
+
+# ---------------------------------------------------------------------------
+# 7. technical_analysis (LLM optional)
+# ---------------------------------------------------------------------------
+async def technical_analysis(state: ContentPipelineState) -> dict:
+    ranked = state.get("ranked", [])
+    skill = load_skill("technical_analysis")
+    analyzed: list[dict] = []
+    llm_calls = state.get("llm_calls", 0)
+    limit = get_settings().max_llm_calls_per_run
+    top = ranked[: state.get("max_posts", 3) + 2]
+
+    for item in top:
+        enriched = dict(item)
+        if llm_calls < limit:
+            content = wrap_untrusted(
+                f"Title: {item.get('title','')}\nSummary: {item.get('research_summary', item.get('summary',''))}"
+            )
+            result = await call_structured(skill.instructions, content, TechnicalAnalysis)
+            if result is not None:
+                enriched["technical_depth"] = result.technical_depth
+                enriched["developer_implications"] = result.developer_implications
+                enriched["business_implications"] = result.business_implications
+                llm_calls += 1
+        analyzed.append(enriched)
+    analyzed_urls = {a.get("url") for a in analyzed}
+    for item in ranked:
+        if item.get("url") not in analyzed_urls:
+            analyzed.append(item)
+    return {"analyzed": analyzed, "llm_calls": llm_calls}
+
+
+# ---------------------------------------------------------------------------
+# 8. select_content (deterministic - diversity + verification gate)
+# ---------------------------------------------------------------------------
+async def select_content(state: ContentPipelineState) -> dict:
+    analyzed = state.get("analyzed", [])
+    eligible = [a for a in analyzed if a.get("verification_status") != "CONTRADICTED"]
+    raw = [_to_raw({k: v for k, v in item.items() if k in RawArticle.__annotations__})
+           for item in eligible]
+    scored = rank_stories(raw, window_hours=state.get("research_window_hours", 24))
+    diverse = select_diverse(scored, limit=state.get("max_posts", 3))
+    by_url = {item.get("url"): item for item in eligible}
+    selected = [by_url.get(s.article.url, {}) for s in diverse if s.article.url in by_url]
+    return {"selected": selected}
+
+
+def _brand_context(brand) -> str:
+    if not brand:
+        return "Prince Kumar - Senior Software Engineer, AI builder, founder of AEVRIX."
+    return (
+        f"Name: {brand.name}\nBio: {brand.biography}\n"
+        f"Expertise: {', '.join(brand.technical_expertise)}\n"
+        f"Writing style: {brand.writing_preferences}\n"
+        f"Restricted topics: {', '.join(brand.restricted_topics)}"
+    )
+
+
+def _story_context(item: dict) -> str:
+    parts = [
+        f"Title: {item.get('title','')}",
+        f"Publisher: {item.get('publisher','')}",
+        f"URL: {item.get('url','')}",
+        f"Summary: {item.get('research_summary', item.get('summary',''))}",
+    ]
+    if item.get("developer_implications"):
+        parts.append("Developer implications: " + "; ".join(item["developer_implications"]))
+    if item.get("key_claims"):
+        parts.append("Key claims: " + "; ".join(item["key_claims"]))
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# 9. generate_x_posts (LLM; without AI -> no draft)
+# ---------------------------------------------------------------------------
+async def generate_x_posts(state: ContentPipelineState) -> dict:
+    selected = state.get("selected", [])
+    skill = load_skill("x_content")
+    brand_ctx = _brand_context(await repo.get_brand_profile())
+    drafts: list[dict] = []
+    llm_calls = state.get("llm_calls", 0)
+    limit = get_settings().max_llm_calls_per_run
+
+    for item in selected:
+        if llm_calls >= limit:
+            break
+        content = wrap_untrusted(_story_context(item))
+        result = await call_structured(
+            f"{skill.instructions}\n\nAUTHOR PROFILE:\n{brand_ctx}", content, XPostOutput,
+        )
+        if result is not None and result.content.strip():
+            drafts.append({
+                "platform": "x",
+                "article_url": item.get("url"),
+                "content": result.content.strip(),
+                "sources": item.get("supporting_sources", [item.get("url", "")]),
+                "evidence": result.evidence,
+                "verification_status": item.get("verification_status", "REQUIRES_REVIEW"),
+                "title": item.get("title", ""),
+            })
+            llm_calls += 1
+    return {"x_drafts": drafts, "llm_calls": llm_calls}
+
+
+# ---------------------------------------------------------------------------
+# 10. generate_linkedin_posts (LLM)
+# ---------------------------------------------------------------------------
+async def generate_linkedin_posts(state: ContentPipelineState) -> dict:
+    selected = state.get("selected", [])
+    skill = load_skill("linkedin_content")
+    brand_ctx = _brand_context(await repo.get_brand_profile())
+    drafts: list[dict] = []
+    llm_calls = state.get("llm_calls", 0)
+    limit = get_settings().max_llm_calls_per_run
+
+    for item in selected[:2]:
+        if llm_calls >= limit:
+            break
+        content = wrap_untrusted(_story_context(item))
+        result = await call_structured(
+            f"{skill.instructions}\n\nAUTHOR PROFILE:\n{brand_ctx}", content, LinkedInPostOutput,
+        )
+        if result is not None and result.content.strip():
+            drafts.append({
+                "platform": "linkedin",
+                "article_url": item.get("url"),
+                "content": result.content.strip(),
+                "sources": item.get("supporting_sources", [item.get("url", "")]),
+                "evidence": result.evidence,
+                "verification_status": item.get("verification_status", "REQUIRES_REVIEW"),
+                "title": item.get("title", ""),
+            })
+            llm_calls += 1
+    return {"linkedin_drafts": drafts, "llm_calls": llm_calls}
+
+
+# ---------------------------------------------------------------------------
+# 11. editorial_quality_check (LLM optional)
+# ---------------------------------------------------------------------------
+async def editorial_quality_check(state: ContentPipelineState) -> dict:
+    skill = load_skill("editorial_review")
+    all_drafts = state.get("x_drafts", []) + state.get("linkedin_drafts", [])
+    reviewed: list[dict] = []
+    llm_calls = state.get("llm_calls", 0)
+    limit = get_settings().max_llm_calls_per_run
+
+    for draft in all_drafts:
+        enriched = dict(draft)
+        quality = 60.0
+        if llm_calls < limit:
+            content = wrap_untrusted(
+                f"Platform: {draft['platform']}\nPost:\n{draft['content']}\n"
+                f"Evidence: {draft.get('evidence', [])}"
+            )
+            result = await call_structured(skill.instructions, content, QualityReview)
+            if result is not None:
+                quality = result.score
+                enriched["quality_issues"] = result.issues
+                enriched["quality_approved"] = result.approved
+                llm_calls += 1
+        enriched["quality_score"] = quality
+        reviewed.append(enriched)
+    return {"reviewed_drafts": reviewed, "llm_calls": llm_calls}
+
+
+# ---------------------------------------------------------------------------
+# 12. persist_drafts (deterministic DB write)
+# ---------------------------------------------------------------------------
+async def persist_drafts(state: ContentPipelineState) -> dict:
+    reviewed = state.get("reviewed_drafts", [])
+    run_id = state.get("run_id", "")
+    ids: list[int] = []
+    for draft in reviewed:
+        try:
+            draft_id = await repo.save_draft({
+                "run_id": run_id,
+                "platform": draft["platform"],
+                "content": draft["content"],
+                "sources": draft.get("sources", []),
+                "evidence": draft.get("evidence", []),
+                "quality_score": draft.get("quality_score", 0.0),
+            })
+            ids.append(draft_id)
+            await repo.record_audit("pipeline", "draft_created", "draft", str(draft_id),
+                                    {"platform": draft["platform"]})
+        except Exception as exc:
+            return {"persisted_draft_ids": ids,
+                    "errors": _add_error(state, "persist_drafts", str(exc))}
+    return {"persisted_draft_ids": ids}
+
+
+# ---------------------------------------------------------------------------
+# 13. send_telegram_review (deterministic; no-op if not configured)
+# ---------------------------------------------------------------------------
+async def send_telegram_review(state: ContentPipelineState) -> dict:
+    ids = state.get("persisted_draft_ids", [])
+    settings = get_settings()
+    if not settings.feature_enabled("telegram") or not ids:
+        return {"telegram_sent": False}
+    try:
+        from app.services.notifications import notify_new_drafts
+        await notify_new_drafts(ids)
+        return {"telegram_sent": True}
+    except Exception as exc:
+        return {"telegram_sent": False,
+                "errors": _add_error(state, "send_telegram_review", str(exc))}

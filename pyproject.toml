@@ -1,0 +1,86 @@
+[project]
+name = "aevrix-content-engine"
+version = "0.1.0"
+description = "AEVRIX Content Intelligence Engine - portable AI content research, drafting, approval and publishing system"
+authors = [{ name = "Prince Kumar", email = "prince@aevrix.in" }]
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+dependencies = [
+    # Core
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "python-dotenv>=1.0",
+    "typer>=0.12",
+    "rich>=13.7",
+    # Web / API
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+    # Dashboard
+    "streamlit>=1.37",
+    "plotly>=5.22",
+    # Database
+    "sqlmodel>=0.0.21",
+    "sqlalchemy>=2.0",
+    "aiosqlite>=0.20",
+    "greenlet>=3.0",
+    # LLM / Agents
+    "langchain>=0.2",
+    "langchain-core>=0.2",
+    "langgraph>=0.2",
+    "langgraph-checkpoint-sqlite>=1.0",
+    # Research
+    "feedparser>=6.0",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.2",
+    # Integrations
+    "python-telegram-bot>=21.0",
+    # Scheduling
+    "apscheduler>=3.10",
+    # Security
+    "cryptography>=42.0",
+    "tenacity>=8.4",
+]
+
+[project.optional-dependencies]
+providers = [
+    "langchain-ollama>=0.1",
+    "langchain-openai>=0.1",
+    "langchain-google-genai>=1.0",
+    "langchain-groq>=0.1",
+    "langchain-azure-ai>=0.1",
+]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "pytest-httpx>=0.30",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+aevrix = "app.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app", "skills"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B", "F811"]
