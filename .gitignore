@@ -12,7 +12,10 @@ data/*.db-*
 data/*.sqlite
 data/*.sqlite3
 logs/*.log
+logs/*.err
+logs/*.out
 *.log
+*.err
 
 # Python
 __pycache__/
