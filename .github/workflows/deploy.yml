@@ -1,14 +1,11 @@
-# Tag-based deploy: pushing a version tag (vX.Y.Z) SSHes into the Oracle VM and
-# runs update.sh for that EXACT tag, which checks it out and restarts services.
-#
-# Why tags (not every push to main)? AEVRIX is a single live always-on instance.
-# Deploying should be a deliberate act, so main stays a free iteration branch and
-# only a tag you create ships code. See docs/ORACLE_DEPLOYMENT.md "Push-to-deploy".
+# Auto-deploy: every push to `main` SSHes into the Oracle VM and runs update.sh,
+# which git-pulls the new code and restarts the services. You push to GitHub, the
+# VM updates itself — no manual SSH needed.
 #
 # IMPORTANT (honest caveats):
 #   - The VM pulls the code itself via git; this job only triggers that over SSH.
 #     No source is copied from the runner, so the VM stays the source of truth and
-#     your .env / data/ are never touched.
+#     your .env / data/ are never touched (they are gitignored).
 #   - Requires four repository secrets (Settings -> Secrets and variables ->
 #     Actions):
 #       DEPLOY_SSH_HOST  - VM public IP or hostname
@@ -17,21 +14,28 @@
 #       DEPLOY_SSH_PORT  - SSH port (optional; defaults to 22)
 #   - The deploy user needs passwordless sudo for update.sh ONLY (sudoers snippet
 #     in deploy/oracle/sudoers-deploy), because SSH sessions are non-interactive.
+#   - Caveat you accepted: a broken commit on main restarts the live services
+#     immediately. Use the manual-dispatch escape hatch to roll back to a known
+#     good commit/tag if that happens.
 
 name: deploy
 
 on:
   push:
-    tags: ["v*"]
-  # Escape hatch: deploy any ref (branch, tag, or commit SHA) on demand.
+    branches: ["main"]
+    # Don't redeploy for docs-only or unrelated changes (optional tidy-up).
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  # Escape hatch / rollback: deploy any ref (branch, tag, or commit SHA) on demand.
   workflow_dispatch:
     inputs:
       ref:
-        description: "Ref to deploy on the VM (tag, branch, or commit SHA)"
+        description: "Ref to deploy on the VM (branch, tag, or commit SHA; blank = main)"
         required: false
         default: ""
 
-# Never run two deploys at once.
+# Never run two deploys at once; let an in-flight deploy finish before the next.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -42,8 +46,8 @@ jobs:
     steps:
       - name: Resolve ref to deploy
         id: ref
-        # On a tag push, github.ref_name is the tag (e.g. v1.2.0).
-        # On manual dispatch, use the typed input (may be empty = current branch).
+        # On push, deploy the branch that was pushed (main).
+        # On manual dispatch, use the typed input (blank = VM's current branch).
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
