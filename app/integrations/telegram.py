@@ -316,7 +316,17 @@ async def cmd_connect_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
 # ---------------------------------------------------------------------------
 # Inline button callbacks + rewrite feedback text
 # ---------------------------------------------------------------------------
+async def _require_approved(draft_id: int):
+    """Return the draft if it is APPROVED/SCHEDULED, else None."""
+    draft = await repo.get_draft(draft_id)
+    if draft and draft.status in (DraftStatus.APPROVED, DraftStatus.SCHEDULED):
+        return draft
+    return None
+
+
 async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    from app.services import notifications as notif
+
     query = update.callback_query
     if not _authorized(update):
         return await _deny(update)
@@ -328,9 +338,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     try:
         if action == "approve":
+            # Approve → re-render the SAME card with the publish/schedule menu.
             await approvals.approve_draft(draft_id, version, user_id)
-            await query.edit_message_text(f"✅ Draft #{draft_id} approved.")
+            draft = await repo.get_draft(draft_id)
+            await query.edit_message_text(
+                notif.draft_preview_html(draft), parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=notif.kb_approved(draft_id, version))
         elif action == "reject":
+            # Reject → nothing shown (remove all buttons).
             await approvals.reject_draft(draft_id, version, user_id)
             await query.edit_message_text(f"❌ Draft #{draft_id} rejected.")
         elif action == "sources":
@@ -343,9 +359,35 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 f"Reply with rewrite feedback for #{draft_id} "
                 f"(e.g. 'make this more technical').")
         elif action == "schedule":
-            await query.message.reply_text(
-                f"Use /schedule {draft_id} <ISO8601 UTC time> to schedule #{draft_id}.")
+            # Must be approved first; otherwise ask for approval.
+            if not await _require_approved(draft_id):
+                return await query.answer(
+                    "Please approve this draft first.", show_alert=True)
+            markup, n = notif.kb_schedule_slots(draft_id, version)
+            if n == 0:
+                return await query.answer(
+                    "No time slots left for today.", show_alert=True)
+            await query.edit_message_reply_markup(reply_markup=markup)
+        elif action.startswith("sch"):
+            # A specific IST slot was tapped, e.g. 'sch14' = 2 PM IST today.
+            if not await _require_approved(draft_id):
+                return await query.answer(
+                    "Please approve this draft first.", show_alert=True)
+            hour = int(action[3:])
+            when = notif.slot_to_utc(hour)
+            await approvals.schedule_draft(draft_id, version, when, user_id)
+            await query.edit_message_text(
+                f"📅 Draft #{draft_id} scheduled for "
+                f"{notif._slot_label(hour)} IST today.")
+        elif action == "back":
+            # Return from the slot view to the approved menu.
+            await query.edit_message_reply_markup(
+                reply_markup=notif.kb_approved(draft_id, version))
         elif action == "publish":
+            # Must be approved first; otherwise ask for approval.
+            if not await _require_approved(draft_id):
+                return await query.answer(
+                    "Please approve this draft first.", show_alert=True)
             settings = get_settings()
             draft = await repo.get_draft(draft_id)
             mock = not settings.feature_enabled(draft.platform.value)

@@ -52,3 +52,24 @@ async def test_mock_x_publish_records(monkeypatch):
     res = await publishing.publish_draft(did, draft.current_version, actor=1, mock=True)
     assert res["status"] == "PUBLISHED"
     assert await repo.published_exists(did, draft.current_version)
+
+
+def test_schedule_slot_labels():
+    from app.services.notifications import _slot_label
+    assert _slot_label(2) == "2 AM"
+    assert _slot_label(11) == "11 AM"
+    assert _slot_label(12) == "12 PM"
+    assert _slot_label(14) == "2 PM"
+    assert _slot_label(18) == "6 PM"
+    assert _slot_label(22) == "10 PM"
+
+
+def test_slot_to_utc_is_ist_hour_today():
+    """A slot hour should map to that IST wall-clock hour, returned in UTC."""
+    from zoneinfo import ZoneInfo
+
+    from app.services.notifications import slot_to_utc
+    when = slot_to_utc(14)  # 2 PM IST
+    ist = when.astimezone(ZoneInfo("Asia/Kolkata"))
+    assert ist.hour == 14 and ist.minute == 0
+    assert when.tzinfo is not None  # timezone-aware (UTC)

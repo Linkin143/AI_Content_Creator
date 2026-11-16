@@ -40,7 +40,40 @@ def draft_preview_html(draft) -> str:
     )
 
 
-def _inline_keyboard(draft_id: int, version: int):
+# IST time slots offered by the 📅 Schedule button (24h hours, ascending).
+# Only slots still in the future *today* (Asia/Kolkata) are shown.
+SLOT_HOURS = [2, 3, 8, 9, 10, 11, 12, 14, 18, 20, 21, 22]
+
+
+def _slot_label(hour24: int) -> str:
+    """Human 12-hour IST label, e.g. 14 -> '2 PM', 12 -> '12 PM', 2 -> '2 AM'."""
+    suffix = "AM" if hour24 < 12 else "PM"
+    h12 = hour24 % 12 or 12
+    return f"{h12} {suffix}"
+
+
+def slot_to_utc(hour24: int):
+    """Convert an IST hour today into a timezone-aware UTC datetime."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    ist = ZoneInfo("Asia/Kolkata")
+    now = datetime.now(ist)
+    slot = now.replace(hour=hour24, minute=0, second=0, microsecond=0)
+    from datetime import UTC
+    return slot.astimezone(UTC)
+
+
+def _future_slot_hours() -> list[int]:
+    """IST slot hours that are still ahead of 'now' today."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    return [h for h in SLOT_HOURS
+            if now.replace(hour=h, minute=0, second=0, microsecond=0) > now]
+
+
+def kb_pending(draft_id: int, version: int):
+    """Keyboard for a draft awaiting approval (PENDING_REVIEW / NEEDS_REVISION)."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     mk = make_callback_token
     rows = [
@@ -56,12 +89,57 @@ def _inline_keyboard(draft_id: int, version: int):
             InlineKeyboardButton("📅 Schedule", callback_data=mk(draft_id, version, "schedule")),
             InlineKeyboardButton("🚀 Publish Now", callback_data=mk(draft_id, version, "publish")),
         ],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_approved(draft_id: int, version: int):
+    """Keyboard shown after a draft is APPROVED (ready to publish or schedule)."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    mk = make_callback_token
+    rows = [
+        [
+            InlineKeyboardButton("🚀 Publish Now", callback_data=mk(draft_id, version, "publish")),
+            InlineKeyboardButton("📅 Schedule", callback_data=mk(draft_id, version, "schedule")),
+        ],
+        [
+            InlineKeyboardButton("🔗 Sources", callback_data=mk(draft_id, version, "sources")),
+            InlineKeyboardButton("❌ Reject", callback_data=mk(draft_id, version, "reject")),
+        ],
         [
             InlineKeyboardButton("📝 Mark Posted Manually",
                                  callback_data=mk(draft_id, version, "manual")),
         ],
     ]
     return InlineKeyboardMarkup(rows)
+
+
+def kb_schedule_slots(draft_id: int, version: int):
+    """Keyboard of today's remaining IST time slots. Returns (markup, n_slots)."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    mk = make_callback_token
+    hours = _future_slot_hours()
+    slot_buttons = [
+        InlineKeyboardButton(f"🕐 {_slot_label(h)} IST",
+                             callback_data=mk(draft_id, version, f"sch{h}"))
+        for h in hours
+    ]
+    rows = [slot_buttons[i:i + 3] for i in range(0, len(slot_buttons), 3)]
+    rows.append([InlineKeyboardButton("⬅️ Back",
+                                      callback_data=mk(draft_id, version, "back"))])
+    return InlineKeyboardMarkup(rows), len(hours)
+
+
+def _inline_keyboard(draft_id: int, version: int, status=None):
+    """Dispatch to the right keyboard for a draft's status.
+
+    APPROVED/SCHEDULED show the publish/schedule menu; everything else shows
+    the approve/reject review menu.
+    """
+    from app.database.models import DraftStatus
+    if status in (DraftStatus.APPROVED, DraftStatus.SCHEDULED):
+        return kb_approved(draft_id, version)
+    return kb_pending(draft_id, version)
 
 
 async def _send(chat_id: int, text: str, reply_markup=None) -> None:
@@ -85,7 +163,8 @@ async def notify_new_drafts(draft_ids: list[int]) -> None:
                 continue
             try:
                 await _send(chat_id, draft_preview_html(draft),
-                            _inline_keyboard(draft_id, draft.current_version))
+                            _inline_keyboard(draft_id, draft.current_version,
+                                             draft.status))
             except Exception as exc:  # preserve draft even if send fails
                 logger.warning("Failed to notify chat %s for draft %s: %s",
                                chat_id, draft_id, exc)
@@ -135,7 +214,8 @@ async def notify_pending_drafts(limit: int = 10) -> int:
         for draft in queue:
             try:
                 await _send(chat_id, draft_preview_html(draft),
-                            _inline_keyboard(draft.id, draft.current_version))
+                            _inline_keyboard(draft.id, draft.current_version,
+                                             draft.status))
                 sent += 1
             except Exception as exc:
                 logger.warning("Failed to send pending draft %s: %s", draft.id, exc)
