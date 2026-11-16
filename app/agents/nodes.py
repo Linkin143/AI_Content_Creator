@@ -153,17 +153,38 @@ async def filter_freshness(state: ContentPipelineState) -> dict:
 # 4. research_stories (LLM optional - extracts claims)
 # ---------------------------------------------------------------------------
 async def research_stories(state: ContentPipelineState) -> dict:
+    """Deep LLM research only on the TOP candidates we might actually draft.
+
+    We pre-rank the fresh pool deterministically (no LLM) and spend claim-
+    extraction calls only on the top few. This reserves the LLM budget for the
+    stages that matter most — verification and draft generation — so a large
+    fresh pool never starves drafting. The rest pass through with their summary
+    as the research_summary.
+    """
     fresh = state.get("fresh", [])
     skill = load_skill("article_research")
-    researched: list[dict] = []
-    llm_calls = state.get("llm_calls", 0)
     settings = get_settings()
-    limit = settings.max_llm_calls_per_run
+    llm_calls = state.get("llm_calls", 0)
 
+    # How many stories we'll ultimately draft (plus a small buffer for dedup/gate).
+    candidate_n = max(1, state.get("max_posts", 3)) + 3
+
+    # Deterministic pre-rank to pick which stories deserve deep research.
+    window = state.get("research_window_hours", 24)
+    raw = [_to_raw({k: v for k, v in item.items() if k in RawArticle.__annotations__})
+           for item in fresh]
+    pre_scored = rank_stories(raw, window_hours=window)
+    top_urls = {s.article.url for s in pre_scored[:candidate_n]}
+
+    # Budget for research = at most candidate_n calls, and never more than ~1/3 of
+    # the total so verification + generation always have room.
+    research_budget = min(candidate_n, max(1, settings.max_llm_calls_per_run // 3))
+    spent = 0
+
+    researched: list[dict] = []
     for item in fresh:
         enriched = dict(item)
-        # Only spend LLM calls on a bounded number of stories.
-        if llm_calls < limit:
+        if item.get("url") in top_urls and spent < research_budget:
             content = wrap_untrusted(f"{item.get('title','')}\n{item.get('summary','')}")
             from app.schemas.content import ExtractedClaims
             result = await call_structured(skill.instructions, content, ExtractedClaims)
@@ -171,25 +192,36 @@ async def research_stories(state: ContentPipelineState) -> dict:
                 enriched["key_claims"] = result.key_claims
                 enriched["research_summary"] = result.summary
                 enriched["entities"] = result.entities
-                llm_calls += 1
+                spent += 1
         enriched.setdefault("key_claims", [])
         enriched.setdefault("research_summary", item.get("summary", ""))
         researched.append(enriched)
 
+    llm_calls += spent
     return {"researched": researched, "llm_calls": llm_calls,
-            "llm_available": llm_calls > state.get("llm_calls", 0) or state.get("llm_available", False)}
+            "llm_available": spent > 0 or state.get("llm_available", False)}
 
 
 # ---------------------------------------------------------------------------
 # 5. verify_claims (LLM optional - defaults to REQUIRES_REVIEW without AI)
 # ---------------------------------------------------------------------------
 async def verify_claims(state: ContentPipelineState) -> dict:
+    """Verify only the stories we actually researched (the top candidates).
+
+    Stories that weren't deep-researched pass through as REQUIRES_REVIEW without
+    spending LLM calls — keeping budget for draft generation.
+    """
     researched = state.get("researched", [])
     skill = load_skill("fact_verification")
-    verified: list[dict] = []
+    settings = get_settings()
     llm_calls = state.get("llm_calls", 0)
-    limit = get_settings().max_llm_calls_per_run
 
+    # Only verify stories that got deep research (they have key_claims populated).
+    # Bounded so verification can't exhaust the budget before generation.
+    verify_budget = max(1, settings.max_llm_calls_per_run // 3)
+    spent = 0
+
+    verified: list[dict] = []
     for item in researched:
         enriched = dict(item)
         status = "REQUIRES_REVIEW"
@@ -197,7 +229,8 @@ async def verify_claims(state: ContentPipelineState) -> dict:
         notes = "No AI verification performed; manual review recommended."
         supporting = [item.get("url", "")] if item.get("url") else []
 
-        if llm_calls < limit:
+        has_research = bool(item.get("key_claims"))
+        if has_research and spent < verify_budget:
             claims = "\n".join(item.get("key_claims", [])) or item.get("summary", "")
             content = wrap_untrusted(
                 f"Title: {item.get('title','')}\nPublisher: {item.get('publisher','')}\n"
@@ -209,7 +242,7 @@ async def verify_claims(state: ContentPipelineState) -> dict:
                 confidence = result.confidence
                 notes = result.editorial_notes
                 supporting = result.supporting_sources or supporting
-                llm_calls += 1
+                spent += 1
 
         enriched["verification_status"] = status
         enriched["verification_confidence"] = confidence
@@ -217,7 +250,7 @@ async def verify_claims(state: ContentPipelineState) -> dict:
         enriched["supporting_sources"] = supporting
         verified.append(enriched)
 
-    return {"verified": verified, "llm_calls": llm_calls}
+    return {"verified": verified, "llm_calls": llm_calls + spent}
 
 
 # ---------------------------------------------------------------------------
@@ -328,16 +361,20 @@ async def generate_x_posts(state: ContentPipelineState) -> dict:
     brand_ctx = _brand_context(await repo.get_brand_profile())
     drafts: list[dict] = []
     llm_calls = state.get("llm_calls", 0)
-    limit = get_settings().max_llm_calls_per_run
+    # Generation has its OWN reserved budget (one call per post we want), so a
+    # busy research/verify stage can never starve drafting. Default: max_posts.
+    x_budget = max(1, state.get("max_posts", 3))
+    made = 0
 
     for item in selected:
-        if llm_calls >= limit:
+        if made >= x_budget:
             break
         content = wrap_untrusted(_story_context(item))
         result = await call_structured(
             f"{skill.instructions}\n\nAUTHOR PROFILE:\n{brand_ctx}", content, XPostOutput,
         )
         if result is not None and result.content.strip():
+            made += 1
             drafts.append({
                 "platform": "x",
                 "article_url": item.get("url"),
@@ -360,16 +397,19 @@ async def generate_linkedin_posts(state: ContentPipelineState) -> dict:
     brand_ctx = _brand_context(await repo.get_brand_profile())
     drafts: list[dict] = []
     llm_calls = state.get("llm_calls", 0)
-    limit = get_settings().max_llm_calls_per_run
+    # LinkedIn has its own reserved budget (fewer, deeper posts): up to 2.
+    li_budget = 2
+    made = 0
 
-    for item in selected[:2]:
-        if llm_calls >= limit:
+    for item in selected[:li_budget]:
+        if made >= li_budget:
             break
         content = wrap_untrusted(_story_context(item))
         result = await call_structured(
             f"{skill.instructions}\n\nAUTHOR PROFILE:\n{brand_ctx}", content, LinkedInPostOutput,
         )
         if result is not None and result.content.strip():
+            made += 1
             drafts.append({
                 "platform": "linkedin",
                 "article_url": item.get("url"),

@@ -35,9 +35,16 @@ def _mock_fetch_factory(tag):
     return fake_fetch_all
 
 
+async def _no_booster():
+    return []
+
+
 async def test_pipeline_without_llm(monkeypatch):
     """No LLM provider -> articles flow through, no drafts, no crash."""
     monkeypatch.setattr(nodes.rss, "fetch_all", _mock_fetch_factory("nollm"))
+    # Isolate from the optional NewsData booster (no real network in tests).
+    import app.research.search as _search
+    monkeypatch.setattr(_search, "newsdata_india_boost", _no_booster)
 
     async def no_structured(*a, **k):
         return None
@@ -72,6 +79,8 @@ async def test_pipeline_without_llm(monkeypatch):
 async def test_pipeline_with_mock_llm(monkeypatch):
     """Mocked AI provider -> drafts are generated and persisted."""
     monkeypatch.setattr(nodes.rss, "fetch_all", _mock_fetch_factory("withllm"))
+    import app.research.search as _search
+    monkeypatch.setattr(_search, "newsdata_india_boost", _no_booster)
     from app.schemas.content import (
         ExtractedClaims,
         LinkedInPostOutput,
