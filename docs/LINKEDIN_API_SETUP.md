@@ -17,10 +17,12 @@ LINKEDIN_CLIENT_ID=...
 LINKEDIN_CLIENT_SECRET=...
 LINKEDIN_REDIRECT_URI=http://localhost:8000/auth/linkedin/callback
 LINKEDIN_SCOPES=openid profile w_member_social
-LINKEDIN_API_VERSION=202405
+LINKEDIN_API_VERSION=202610
 ```
 The API version is configurable (sent via the `LinkedIn-Version` header) — no
-obsolete version is hardcoded.
+obsolete version is hardcoded. LinkedIn retires each `YYYYMM` version after
+~2 years; a stale value returns HTTP 426 "version not active". Bump this to a
+current month if that happens.
 
 ## 3. Connect your account
 1. Start the API and visit `http://localhost:8000/auth/linkedin/connect`.

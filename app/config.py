@@ -88,7 +88,9 @@ class Settings(BaseSettings):
     linkedin_client_secret: str = ""
     linkedin_redirect_uri: str = "http://localhost:8000/auth/linkedin/callback"
     linkedin_scopes: str = "openid profile w_member_social"
-    linkedin_api_version: str = "202405"
+    # LinkedIn requires a YYYYMM version header; old versions are retired after
+    # ~2 years and return HTTP 426 "version not active". Keep this current.
+    linkedin_api_version: str = "202610"
 
     # ---- Search ----
     search_provider: str = ""
