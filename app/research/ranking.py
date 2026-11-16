@@ -19,12 +19,15 @@ from datetime import UTC, datetime
 
 from app.research.rss import RawArticle
 
+# Weights tuned for "catch trending stories fast". Freshness is weighted heavily
+# so breaking/hot items rise to the top; technical relevance still dominates so we
+# stay on-brand for an AI/engineering audience.
 DEFAULT_WEIGHTS = {
-    "technical_relevance": 0.30,
-    "engineering_significance": 0.25,
-    "freshness": 0.15,
-    "audience_relevance": 0.15,
-    "insight_opportunity": 0.15,
+    "technical_relevance": 0.28,
+    "engineering_significance": 0.17,
+    "freshness": 0.30,
+    "audience_relevance": 0.13,
+    "insight_opportunity": 0.12,
 }
 
 _TECH_TERMS = {
@@ -51,6 +54,15 @@ _INSIGHT_TERMS = {
     "comparison", "tutorial", "case study", "report", "trend", "impact",
     "strategy", "outlook",
 }
+# Words that signal a story is high-interest / likely to spread. Used as a bonus
+# so genuinely newsworthy items (launches, records, breakthroughs) rank higher.
+_TRENDING_TERMS = {
+    "launches", "launch", "announces", "announced", "unveils", "releases",
+    "released", "introducing", "now available", "breakthrough", "first",
+    "fastest", "record", "beats", "outperforms", "open-source", "open source",
+    "free", "leaked", "exclusive", "raises", "acquires", "shuts down", "bans",
+    "gpt-5", "gpt-6", "claude", "gemini", "llama", "deepseek", "o3", "o4",
+}
 
 
 @dataclass
@@ -73,14 +85,20 @@ def _term_score(text: str, terms: set[str]) -> float:
 
 
 def _freshness_score(published_at: datetime | None, window_hours: int) -> float:
+    """Sharper recency curve so very fresh (hot/trending) items win decisively.
+
+    < 2h  -> ~100, 6h -> ~85, 12h -> ~70, 24h -> ~45, then tapering to 10.
+    """
     if published_at is None:
-        return 50.0  # unknown date -> neutral
+        return 45.0  # unknown date -> slightly below a confirmed-recent item
     age_h = (datetime.now(UTC) - published_at).total_seconds() / 3600.0
-    if age_h <= 0:
+    if age_h <= 2:
         return 100.0
     if age_h >= window_hours:
         return 10.0
-    return max(10.0, 100.0 * (1 - age_h / window_hours))
+    # Linear-ish decay but front-loaded: newest hours barely lose points.
+    frac = (age_h - 2) / max(1.0, (window_hours - 2))
+    return max(10.0, 100.0 - (frac * 90.0))
 
 
 def score_story(
@@ -101,6 +119,11 @@ def score_story(
     # Reliability bonus: tier 1 sources get a small boost.
     reliability_bonus = {1: 10.0, 2: 3.0, 3: 0.0}.get(reliability_tier, 0.0)
 
+    # Trending bonus: +4 per hit (cap 12) for launch/record/model-name signals
+    # that indicate a high-interest, shareable story.
+    trending_hits = sum(1 for t in _TRENDING_TERMS if t in text.lower())
+    trending_bonus = min(12.0, trending_hits * 4.0)
+
     base = (
         tech * w["technical_relevance"]
         + eng * w["engineering_significance"]
@@ -108,11 +131,12 @@ def score_story(
         + audience * w["audience_relevance"]
         + insight * w["insight_opportunity"]
     )
-    score = min(100.0, base + reliability_bonus)
+    score = min(100.0, base + reliability_bonus + trending_bonus)
 
     rationale = (
         f"tech={tech:.0f} eng={eng:.0f} fresh={fresh:.0f} "
-        f"aud={audience:.0f} insight={insight:.0f} tier={reliability_tier}"
+        f"aud={audience:.0f} insight={insight:.0f} trend+{trending_bonus:.0f} "
+        f"tier={reliability_tier}"
     )
     return ScoredStory(
         article=article,
