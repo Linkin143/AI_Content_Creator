@@ -2,7 +2,8 @@
 
 Default timezone Asia/Kolkata. Research runs daily at 08:00 IST, followed by
 draft generation and Telegram notifications. Due scheduled publications are
-processed on a short interval. Quiet hours suppress auto-publishing.
+processed on a short interval and fire at the exact time the owner chose (no
+quiet-hours suppression, since every schedule is an explicit human choice).
 
 Single-instance only: do not run multiple schedulers against one database.
 """
@@ -10,7 +11,6 @@ Single-instance only: do not run multiple schedulers against one database.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, time
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -20,16 +20,6 @@ from app.config import get_settings
 from app.database import repositories as repo
 
 logger = logging.getLogger("aevrix.scheduler")
-
-QUIET_START = time(22, 0)  # 22:00 IST
-QUIET_END = time(7, 0)     # 07:00 IST
-
-
-def _in_quiet_hours(now: datetime) -> bool:
-    t = now.time()
-    if QUIET_START <= QUIET_END:
-        return QUIET_START <= t <= QUIET_END
-    return t >= QUIET_START or t <= QUIET_END
 
 
 async def scheduled_research_job() -> None:
@@ -49,12 +39,13 @@ async def scheduled_research_job() -> None:
 
 
 async def process_due_publications() -> None:
-    """Publish scheduled drafts whose time has arrived (respects quiet hours)."""
+    """Publish scheduled drafts whose chosen time has arrived.
+
+    Every schedule is an explicit human choice (a slot the owner tapped), so we
+    honor the exact time with no quiet-hours suppression.
+    """
     settings = get_settings()
     if not settings.auto_publish:
-        return
-    now = datetime.now()
-    if _in_quiet_hours(now):
         return
     from app.services.publishing import publish_draft
     due = await repo.list_due_schedules()
