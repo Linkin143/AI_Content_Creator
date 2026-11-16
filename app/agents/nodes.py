@@ -72,6 +72,15 @@ async def discover_news(state: ContentPipelineState) -> dict:
         for art in res.articles:
             raw.append(asdict(art))
 
+    # Supplement RSS with a small, credit-capped NewsData.io India/AI boost.
+    # No-op unless SEARCH_PROVIDER=newsdata + SEARCH_API_KEY are configured.
+    try:
+        from app.research.search import newsdata_india_boost
+        for art in await newsdata_india_boost():
+            raw.append(asdict(art))
+    except Exception as exc:  # never let the booster break the run
+        logger.warning("newsdata boost failed: %s", exc)
+
     # Keep the newest items across ALL sources before dedup, so we don't let a
     # few large feeds crowd out everything else. Sort by publish date (newest
     # first; undated items last) and keep a generous working set.
