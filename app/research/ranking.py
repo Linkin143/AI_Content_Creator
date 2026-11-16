@@ -63,6 +63,15 @@ _TRENDING_TERMS = {
     "free", "leaked", "exclusive", "raises", "acquires", "shuts down", "bans",
     "gpt-5", "gpt-6", "claude", "gemini", "llama", "deepseek", "o3", "o4",
 }
+# India-relevance signals. The audience is Indian; stories with an India angle
+# (telecom, Jio/Reliance, IT majors, startups, policy) get a strong boost.
+_INDIA_TERMS = {
+    "india", "indian", "jio", "reliance", "airtel", "trai", "bharat",
+    "bengaluru", "bangalore", "mumbai", "delhi", "hyderabad", "isro",
+    "infosys", "tcs", "wipro", "hcl", "zoho", "ola", "paytm", "zomato",
+    "flipkart", "meity", "indiaai", "rupee", "crore", "upi", "aadhaar",
+    "startup india", "make in india", "semiconductor mission",
+}
 
 
 @dataclass
@@ -124,6 +133,14 @@ def score_story(
     trending_hits = sum(1 for t in _TRENDING_TERMS if t in text.lower())
     trending_bonus = min(12.0, trending_hits * 4.0)
 
+    # India bonus: audience is Indian, so an India angle is a strong signal.
+    india_hits = sum(1 for t in _INDIA_TERMS if t in text.lower())
+    india_bonus = min(18.0, india_hits * 9.0)
+    # Indian-region sources (Jio/TRAI/startup feeds) get the boost even if the
+    # title doesn't literally contain an India keyword.
+    if getattr(article, "region", "") == "india":
+        india_bonus = max(india_bonus, 12.0)
+
     base = (
         tech * w["technical_relevance"]
         + eng * w["engineering_significance"]
@@ -131,12 +148,12 @@ def score_story(
         + audience * w["audience_relevance"]
         + insight * w["insight_opportunity"]
     )
-    score = min(100.0, base + reliability_bonus + trending_bonus)
+    score = min(100.0, base + reliability_bonus + trending_bonus + india_bonus)
 
     rationale = (
         f"tech={tech:.0f} eng={eng:.0f} fresh={fresh:.0f} "
         f"aud={audience:.0f} insight={insight:.0f} trend+{trending_bonus:.0f} "
-        f"tier={reliability_tier}"
+        f"india+{india_bonus:.0f} tier={reliability_tier}"
     )
     return ScoredStory(
         article=article,

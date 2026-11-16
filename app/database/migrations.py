@@ -69,19 +69,28 @@ def _default_brand_profile() -> BrandProfile:
             "Browser automation", "APIs", "Agentic AI", "AI product engineering",
         ],
         preferred_subjects=[
-            "AI agents", "LangGraph", "LangChain", "developer productivity",
-            "Indian AI ecosystem", "software engineering", "startup building",
+            "Indian tech & AI", "telecom & TRAI rules", "Jio / Reliance AI",
+            "India IT investments & deals", "Indian startups", "new AI models",
+            "AI agents", "future tech (EV, space, chips)", "flagship devices",
         ],
         writing_preferences=(
-            "Clear, confident, human, practical and technical. Avoid hype, buzzword "
-            "overload, engagement bait and fake personal experiences."
+            "Direct, specific, human and opinionated — the way a sharp Indian "
+            "engineer actually writes. X: India-first 'take' on tech/AI news. "
+            "LinkedIn: professional business case studies, resource/explainer "
+            "articles, and journey/innovation stories. No AI tone, no generic "
+            "filler, no hype words, no hallucinated facts."
         ),
         approved_viewpoints=[],
         real_projects=["AEVRIX Content Intelligence Engine"],
         verified_achievements=[],
         audience_interests=[
-            "AI engineering", "software development", "startups", "automation",
+            "Indian tech news", "Indian AI ecosystem", "Indian startups",
+            "telecom & consumer tech", "new AI models", "future tech",
+            "business case studies", "AI-era business strategy",
         ],
-        restricted_topics=["politics", "religion", "unverified benchmarks"],
+        restricted_topics=[
+            "politics", "religion", "geopolitics", "general world news",
+            "unverified benchmarks",
+        ],
         project_notes=[],
     )
