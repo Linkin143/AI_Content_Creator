@@ -318,6 +318,20 @@ async def technical_analysis(state: ContentPipelineState) -> dict:
 async def select_content(state: ContentPipelineState) -> dict:
     analyzed = state.get("analyzed", [])
     eligible = [a for a in analyzed if a.get("verification_status") != "CONTRADICTED"]
+
+    # Skip stories we've ALREADY drafted before (even if they arrived from a
+    # different feed URL this time) so the user never sees the same post twice.
+    try:
+        already = await repo.drafted_source_urls()
+    except Exception:
+        already = set()
+
+    def _is_new(item: dict) -> bool:
+        url = (item.get("url") or "").rstrip("/")
+        return url not in already
+
+    eligible = [a for a in eligible if _is_new(a)]
+
     raw = [_to_raw({k: v for k, v in item.items() if k in RawArticle.__annotations__})
            for item in eligible]
     scored = rank_stories(raw, window_hours=state.get("research_window_hours", 24))
@@ -336,6 +350,20 @@ def _brand_context(brand) -> str:
         f"Writing style: {brand.writing_preferences}\n"
         f"Restricted topics: {', '.join(brand.restricted_topics)}"
     )
+
+
+def _draft_sources(item: dict) -> list[str]:
+    """Sources for a draft: the article's own URL first (always), then any
+    verified supporting sources. The article URL is kept so later runs can detect
+    this story was already drafted and never repeat it."""
+    out: list[str] = []
+    url = item.get("url")
+    if url:
+        out.append(url)
+    for s in item.get("supporting_sources", []) or []:
+        if s and s not in out:
+            out.append(s)
+    return out
 
 
 def _story_context(item: dict) -> str:
@@ -379,7 +407,7 @@ async def generate_x_posts(state: ContentPipelineState) -> dict:
                 "platform": "x",
                 "article_url": item.get("url"),
                 "content": result.content.strip(),
-                "sources": item.get("supporting_sources", [item.get("url", "")]),
+                "sources": _draft_sources(item),
                 "evidence": result.evidence,
                 "verification_status": item.get("verification_status", "REQUIRES_REVIEW"),
                 "title": item.get("title", ""),
@@ -414,7 +442,7 @@ async def generate_linkedin_posts(state: ContentPipelineState) -> dict:
                 "platform": "linkedin",
                 "article_url": item.get("url"),
                 "content": result.content.strip(),
-                "sources": item.get("supporting_sources", [item.get("url", "")]),
+                "sources": _draft_sources(item),
                 "evidence": result.evidence,
                 "verification_status": item.get("verification_status", "REQUIRES_REVIEW"),
                 "title": item.get("title", ""),

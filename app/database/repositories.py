@@ -63,6 +63,24 @@ async def existing_article_keys() -> tuple[set[str], set[str]]:
         return {u for u in urls if u}, {f for f in fps if f}
 
 
+async def drafted_source_urls(limit: int = 500) -> set[str]:
+    """Return the set of source URLs already used in existing drafts.
+
+    Used to avoid re-drafting the same story that arrived from a different feed
+    URL (so the user never sees the same post twice)."""
+    async with async_session_factory() as session:
+        rows = (await session.execute(
+            select(Draft.sources).order_by(Draft.created_at.desc()).limit(limit)
+        )).scalars().all()
+    urls: set[str] = set()
+    for src_list in rows:
+        if isinstance(src_list, list):
+            for s in src_list:
+                if isinstance(s, str) and s.startswith("http"):
+                    urls.add(s.rstrip("/"))
+    return urls
+
+
 async def save_article(data: dict) -> int:
     async with async_session_factory() as session:
         article = Article(**data)
