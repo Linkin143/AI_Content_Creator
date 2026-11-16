@@ -74,12 +74,40 @@ async def publish_draft(draft_id: int, version: int, actor: int | None,
             "platform_post_id": result.get("id", ""), "mock": mock}
 
 
+async def _fresh_access_token(conn) -> str:
+    """Return a valid access token, refreshing it first if it has expired.
+
+    If refresh fails (no refresh token, or provider rejects it), fall back to
+    the stored token so the caller still gets a clear API 401 and the manual
+    workflow kicks in."""
+    from app.services import social_store
+
+    if not social_store.is_expired(conn):
+        return decrypt(conn.access_token_enc)
+
+    refresh_tok = decrypt(conn.refresh_token_enc) if conn.refresh_token_enc else ""
+    if not refresh_tok:
+        return decrypt(conn.access_token_enc)
+
+    try:
+        if conn.platform == Platform.X:
+            tok = await x_api.refresh_token(refresh_tok)
+        else:
+            tok = await li.refresh_token(refresh_tok)
+    except Exception:
+        return decrypt(conn.access_token_enc)
+
+    await social_store.update_tokens(
+        conn.id, tok.access_token, tok.refresh_token, tok.expires_in)
+    return tok.access_token
+
+
 async def _publish_live(platform: Platform, text: str) -> dict:
     conn = await get_active_connection(platform)
     if not conn:
         raise PublishError(f"no active {platform.value} connection; connect the account first")
 
-    access_token = decrypt(conn.access_token_enc)
+    access_token = await _fresh_access_token(conn)
     if platform == Platform.X:
         data = await x_api.create_post(access_token, text)
         return {"id": data.get("id", ""), "status": "published", "response": data}

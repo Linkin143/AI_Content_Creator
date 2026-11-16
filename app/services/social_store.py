@@ -59,3 +59,29 @@ async def disconnect(platform: Platform) -> bool:
             session.add(conn)
         await session.commit()
         return bool(conns)
+
+
+def is_expired(conn: SocialConnection, skew_seconds: int = 120) -> bool:
+    """True if the connection's access token is expired (or about to be)."""
+    if conn.expires_at is None:
+        return False
+    exp = conn.expires_at
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=UTC)
+    return datetime.now(UTC) >= (exp - timedelta(seconds=skew_seconds))
+
+
+async def update_tokens(conn_id: int, access_token: str, refresh_token: str,
+                        expires_in: int) -> None:
+    """Replace stored tokens on an existing connection (after a refresh)."""
+    async with async_session_factory() as session:
+        conn = await session.get(SocialConnection, conn_id)
+        if not conn:
+            return
+        conn.access_token_enc = encrypt(access_token)
+        if refresh_token:
+            conn.refresh_token_enc = encrypt(refresh_token)
+        conn.expires_at = (datetime.now(UTC) + timedelta(seconds=expires_in)
+                           if expires_in else None)
+        session.add(conn)
+        await session.commit()

@@ -75,6 +75,33 @@ async def exchange_code(code: str) -> TokenResponse:
     )
 
 
+async def refresh_token(refresh_tok: str) -> TokenResponse:
+    """Exchange a LinkedIn refresh token for a new access token.
+
+    Only works if the app is approved for refresh tokens; otherwise LinkedIn
+    returns an error and the owner must re-authorize via /auth/linkedin/connect.
+    """
+    settings = get_settings()
+    data = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_tok,
+        "client_id": settings.linkedin_client_id,
+        "client_secret": settings.linkedin_client_secret,
+    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.post(TOKEN_URL, data=data, headers=headers)
+    if resp.status_code != 200:
+        raise LinkedInAPIError(resp.status_code, resp.text)
+    body = resp.json()
+    return TokenResponse(
+        access_token=body.get("access_token", ""),
+        refresh_token=body.get("refresh_token", refresh_tok),
+        expires_in=body.get("expires_in", 3600),
+        scope=body.get("scope", ""),
+    )
+
+
 async def get_member_info(access_token: str) -> dict:
     """OpenID Connect userinfo - returns the member's 'sub' used as author URN."""
     headers = {"Authorization": f"Bearer {access_token}"}
