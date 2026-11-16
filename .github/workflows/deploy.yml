@@ -65,5 +65,5 @@ jobs:
           command_timeout: "15m"
           script_stop: true
           script: |
-            sudo /opt/aevrix/deploy/oracle/update.sh ${{ steps.ref.outputs.value }}
+            sudo /usr/bin/bash /opt/aevrix/deploy/oracle/update.sh ${{ steps.ref.outputs.value }}
 

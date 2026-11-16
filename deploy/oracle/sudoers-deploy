@@ -14,4 +14,6 @@
 # SEPARATE account from "aevrix" (which owns the repo): /opt/aevrix is owned by
 # aevrix:aevrix, so the deploy user has no write access. Do NOT make the deploy
 # user a member of the aevrix group, and do NOT reuse the aevrix user for deploy.
-deploy ALL=(root) NOPASSWD: /opt/aevrix/deploy/oracle/update.sh, /opt/aevrix/deploy/oracle/update.sh *
+# Allow both direct execution and invocation via bash (the workflow uses bash so
+# the script's executable bit does not matter after a git checkout on an ARM VM).
+deploy ALL=(root) NOPASSWD: /opt/aevrix/deploy/oracle/update.sh, /opt/aevrix/deploy/oracle/update.sh *, /usr/bin/bash /opt/aevrix/deploy/oracle/update.sh, /usr/bin/bash /opt/aevrix/deploy/oracle/update.sh *
