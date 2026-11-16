@@ -12,9 +12,11 @@
 
 name: scheduled-research
 
+# DISABLED: the real scheduler now runs on the Oracle VM (aevrix-scheduler service),
+# which has the database + secrets and runs research at 08:00 IST reliably.
+# This GitHub-runner cron can't reach the VM's SQLite DB and would always fail,
+# so it is reduced to manual-only (no automatic schedule). Kept for reference.
 on:
-  schedule:
-    - cron: "30 2 * * *"   # 02:30 UTC == 08:00 IST (approximate; best-effort)
   workflow_dispatch: {}
 
 jobs:
