@@ -91,6 +91,30 @@ async def notify_new_drafts(draft_ids: list[int]) -> None:
                                chat_id, draft_id, exc)
 
 
+async def summarize_pending_drafts(limit: int = 50) -> int:
+    """Send a ONE-LINE summary of how many drafts await review (no full cards).
+
+    Used on bot startup so a deploy/restart does not re-post every draft card.
+    Returns the number of pending drafts found.
+    """
+    from app.database.models import DraftStatus
+    settings = get_settings()
+    if not settings.feature_enabled("telegram"):
+        return 0
+    pending = await repo.list_drafts(status=DraftStatus.PENDING_REVIEW, limit=limit)
+    revision = await repo.list_drafts(status=DraftStatus.NEEDS_REVISION, limit=limit)
+    count = len(pending) + len(revision)
+    if count == 0:
+        return 0
+    for chat_id in settings.allowed_telegram_ids:
+        await _send(
+            chat_id,
+            f"🔔 You have <b>{count}</b> draft(s) awaiting review. "
+            f"Tap /pending to view and approve them.",
+        )
+    return count
+
+
 async def notify_pending_drafts(limit: int = 10) -> int:
     """Send all drafts currently awaiting review. Used on bot startup.
 

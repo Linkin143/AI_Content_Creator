@@ -408,14 +408,18 @@ def build_application() -> Application:
 
 
 async def _on_startup(app: Application) -> None:
-    """On bot startup, push any drafts already awaiting review to the owner."""
+    """On bot startup, send a ONE-LINE reminder of pending drafts (not full cards).
+
+    A deploy/restart no longer re-posts every draft card; the owner taps
+    /pending to see them. This avoids spamming the same drafts on each deploy.
+    """
     try:
-        from app.services.notifications import notify_pending_drafts
-        count = await notify_pending_drafts()
+        from app.services.notifications import summarize_pending_drafts
+        count = await summarize_pending_drafts()
         if count:
-            logger.info("Sent %d pending draft(s) on startup.", count)
+            logger.info("Reminded owner of %d pending draft(s) on startup.", count)
     except Exception as exc:  # never block startup on a notification failure
-        logger.warning("Startup pending-draft notify failed: %s", exc)
+        logger.warning("Startup pending-draft reminder failed: %s", exc)
 
 
 def run_polling() -> None:
