@@ -74,6 +74,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/today - today's summary\n/approve <id> /reject <id> /rewrite <id> <text>\n"
         "/schedule <id> <ISO time> /publish <id>\n/queue - scheduled posts\n"
         "/connect_status - X / LinkedIn connection status\n"
+        "/cleanup - delete pending drafts older than the retention window\n"
         "/stats - analytics\n/pause /resume /settings /health"
     )
 
@@ -294,6 +295,24 @@ async def cmd_pending(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("No drafts awaiting review. Run /research.")
 
 
+async def cmd_cleanup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manually delete pending/needs-revision drafts older than the retention window.
+
+    Same action the daily job runs; lets the owner wipe stale review cards on demand.
+    Only un-actioned cards expire — approved/scheduled/published/rejected are kept.
+    """
+    if not _authorized(update):
+        return await _deny(update)
+    days = get_settings().draft_retention_days
+    deleted = await repo.delete_stale_pending_drafts(days)
+    if deleted:
+        await update.message.reply_text(
+            f"🧹 Cleaned up {deleted} stale pending draft(s) older than {days} days.")
+    else:
+        await update.message.reply_text(
+            f"Nothing to clean — no pending drafts older than {days} days.")
+
+
 async def cmd_connect_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Show which social accounts are connected."""
     if not _authorized(update):
@@ -441,6 +460,7 @@ def build_application() -> Application:
         "stats": cmd_stats, "pause": cmd_pause, "resume": cmd_resume,
         "settings": cmd_settings, "health": cmd_health,
         "pending": cmd_pending, "connect_status": cmd_connect_status,
+        "cleanup": cmd_cleanup,
     }
     for name, fn in handlers.items():
         app.add_handler(CommandHandler(name, fn))
