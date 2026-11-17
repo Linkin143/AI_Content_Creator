@@ -79,6 +79,27 @@ async def test_schedule_requires_approval():
     assert res["status"] == "SCHEDULED"
 
 
+async def test_delete_stale_pending_drafts():
+    from datetime import datetime, timedelta
+
+    # Fresh pending draft (today) must survive.
+    fresh = await _make_draft("fresh pending")
+    # Old pending draft (10 days ago) must be deleted.
+    old = await _make_draft("old pending")
+    await repo.update_draft(old, created_at=datetime.now(UTC) - timedelta(days=10))
+    # Old but APPROVED draft must NOT be deleted (only pending/revision expire).
+    kept = await _make_draft("old approved")
+    k = await repo.get_draft(kept)
+    await approvals.approve_draft(kept, k.current_version, actor=1)
+    await repo.update_draft(kept, created_at=datetime.now(UTC) - timedelta(days=10))
+
+    deleted = await repo.delete_stale_pending_drafts(older_than_days=7)
+    assert deleted == 1
+    assert await repo.get_draft(old) is None
+    assert await repo.get_draft(fresh) is not None
+    assert await repo.get_draft(kept) is not None
+
+
 async def test_manual_publish_fallback():
     did = await _make_draft()
     draft = await repo.get_draft(did)

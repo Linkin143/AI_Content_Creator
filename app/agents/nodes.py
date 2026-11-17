@@ -442,8 +442,8 @@ async def generate_linkedin_posts(state: ContentPipelineState) -> dict:
     brand_ctx = _brand_context(await repo.get_brand_profile())
     drafts: list[dict] = []
     llm_calls = state.get("llm_calls", 0)
-    # LinkedIn has its own reserved budget (fewer, deeper posts): up to 2.
-    li_budget = 2
+    # LinkedIn has its own reserved budget (fewer, deeper posts): up to 3.
+    li_budget = 3
     made = 0
 
     for item in selected[:li_budget]:

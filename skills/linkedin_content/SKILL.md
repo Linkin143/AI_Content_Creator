@@ -26,7 +26,10 @@ Frame every case study / resource / journey in this order of relevance:
 2. **US (second):** the US-market story (OpenAI/Google/Microsoft/Nvidia/Meta,
    US funding, US regulation) — analysed, then connected back to "what this
    means for India / for operators here."
-3. **WORLD (third):** the broader global picture, only when it adds real value.
+3. **WORLD (third):** the broader global picture. Within this, **China and Japan
+   tech/business** (Huawei, Alibaba, DeepSeek, BYD, Sony, SoftBank, Toyota) are a
+   welcome **small slice** — occasional case studies framed as "what India /
+   operators here can learn from it." Keep them a minority of posts.
 
 Always ask "India → US → World" and build the analysis in that order of emphasis.
 

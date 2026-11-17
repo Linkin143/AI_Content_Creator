@@ -170,6 +170,9 @@ NEWSDATA_INDIA_QUERIES: list[tuple[str, str, str, str]] = [
     # --- WORLD (third priority) ---
     ("artificial intelligence OR new AI model OR chip breakthrough", "",
      "ai_news", "global"),
+    # --- CHINA / JAPAN (small third-tier slice) ---
+    ("China tech OR Huawei OR Alibaba OR DeepSeek OR Japan tech OR Sony", "",
+     "china_japan_tech", "global"),
 ]
 
 

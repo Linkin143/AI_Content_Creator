@@ -57,6 +57,18 @@ async def process_due_publications() -> None:
             logger.warning("Scheduled publish of draft %s failed: %s", sched.draft_id, exc)
 
 
+async def cleanup_stale_drafts_job() -> None:
+    """Delete pending/needs-revision drafts older than the retention window."""
+    settings = get_settings()
+    try:
+        n = await repo.delete_stale_pending_drafts(settings.draft_retention_days)
+        if n:
+            logger.info("Cleaned up %d stale pending draft(s) (> %d days).",
+                        n, settings.draft_retention_days)
+    except Exception as exc:
+        logger.warning("Stale-draft cleanup failed: %s", exc)
+
+
 def build_scheduler() -> AsyncIOScheduler:
     settings = get_settings()
     scheduler = AsyncIOScheduler(timezone=settings.app_timezone)
@@ -67,5 +79,10 @@ def build_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         process_due_publications, IntervalTrigger(minutes=5),
         id="process_publications", replace_existing=True, misfire_grace_time=300,
+    )
+    # Daily at 03:30 IST: wipe pending/needs-revision drafts older than 7 days.
+    scheduler.add_job(
+        cleanup_stale_drafts_job, CronTrigger(hour=3, minute=30),
+        id="cleanup_stale_drafts", replace_existing=True, misfire_grace_time=3600,
     )
     return scheduler

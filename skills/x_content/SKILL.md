@@ -14,12 +14,15 @@ Rank what to talk about, and which angle to lead with, in this exact order:
 2. **US (second priority):** what's happening in the US market — OpenAI/Google/
    Microsoft/Nvidia/Meta moves, US funding, US policy — but always framed as
    "what this means for India / for us watching from here."
-3. **WORLD (third priority):** the rest of the global story (EU, China, others),
-   only when it genuinely matters.
+3. **WORLD (third priority):** the rest of the global story. Within this,
+   **China and Japan tech/business** (Huawei, Alibaba, DeepSeek, BYD, Sony,
+   SoftBank, Toyota, chips, EVs) are a welcome **small slice** — include them
+   occasionally for variety, framed as "what it means for India / the global race."
 
 **The rule:** for every story ask "India → US → World." Lead with the India angle.
 If there's no India angle, lead with the US angle and connect it back to India.
-A pure world story only wins if it's genuinely striking.
+A pure world story (incl. China/Japan) only wins if it's genuinely striking, and
+should stay a minority of posts.
 
 ## Purpose
 Turn a fresh, verified story into ONE scroll-stopping X post — ideally with an

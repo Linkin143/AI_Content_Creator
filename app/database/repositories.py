@@ -178,6 +178,33 @@ async def update_draft(draft_id: int, **fields) -> Draft | None:
         return draft
 
 
+async def delete_stale_pending_drafts(older_than_days: int = 7) -> int:
+    """Delete PENDING_REVIEW / NEEDS_REVISION drafts older than N days.
+
+    Also removes their draft_versions, approvals and schedules so no orphan rows
+    remain. Published/approved/scheduled/rejected drafts are never touched — only
+    un-actioned review cards expire. Returns the number of drafts deleted."""
+    from datetime import timedelta
+
+    from sqlalchemy import delete as sa_delete
+
+    cutoff = datetime.now(UTC) - timedelta(days=older_than_days)
+    stale_states = [DraftStatus.PENDING_REVIEW, DraftStatus.NEEDS_REVISION]
+    async with async_session_factory() as session:
+        stmt = select(Draft.id).where(
+            Draft.status.in_(stale_states), Draft.created_at < cutoff)
+        ids = list((await session.execute(stmt)).scalars().all())
+        if not ids:
+            return 0
+        await session.execute(sa_delete(DraftVersion).where(
+            DraftVersion.draft_id.in_(ids)))
+        await session.execute(sa_delete(Approval).where(Approval.draft_id.in_(ids)))
+        await session.execute(sa_delete(Schedule).where(Schedule.draft_id.in_(ids)))
+        await session.execute(sa_delete(Draft).where(Draft.id.in_(ids)))
+        await session.commit()
+        return len(ids)
+
+
 async def add_draft_version(draft_id: int, content: str, reason: str) -> int:
     """Create a new version, bump draft, and reset approval status."""
     async with async_session_factory() as session:

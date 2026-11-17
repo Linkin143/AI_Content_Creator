@@ -80,6 +80,14 @@ _US_TERMS = {
     "amazon", "tesla", "nasdaq", "sec", "white house", "fed", "dollar",
     "san francisco", "washington",
 }
+# China / Japan tech & business signals. A small, third-tier slice of coverage
+# (below India and US) — kept intentionally minor.
+_CHINA_JAPAN_TERMS = {
+    "china", "chinese", "beijing", "shanghai", "shenzhen", "huawei", "alibaba",
+    "tencent", "baidu", "bytedance", "tiktok", "xiaomi", "byd", "deepseek",
+    "japan", "japanese", "tokyo", "sony", "toyota", "softbank", "nintendo",
+    "yen", "yuan",
+}
 
 
 @dataclass
@@ -160,6 +168,12 @@ def score_story(
     if india_bonus > 0:
         us_bonus = min(us_bonus, india_bonus - 1.0)
 
+    # China/Japan bonus: a small third-tier slice (capped +4), always below US.
+    cj_hits = sum(1 for t in _CHINA_JAPAN_TERMS if t in text.lower())
+    cj_bonus = min(4.0, cj_hits * 2.0)
+    if us_bonus > 0:
+        cj_bonus = min(cj_bonus, us_bonus - 0.5)
+
     base = (
         tech * w["technical_relevance"]
         + eng * w["engineering_significance"]
@@ -168,12 +182,13 @@ def score_story(
         + insight * w["insight_opportunity"]
     )
     score = min(100.0, base + reliability_bonus + trending_bonus
-                + india_bonus + us_bonus)
+                + india_bonus + us_bonus + cj_bonus)
 
     rationale = (
         f"tech={tech:.0f} eng={eng:.0f} fresh={fresh:.0f} "
         f"aud={audience:.0f} insight={insight:.0f} trend+{trending_bonus:.0f} "
-        f"india+{india_bonus:.0f} us+{us_bonus:.0f} tier={reliability_tier}"
+        f"india+{india_bonus:.0f} us+{us_bonus:.0f} cj+{cj_bonus:.0f} "
+        f"tier={reliability_tier}"
     )
     return ScoredStory(
         article=article,
