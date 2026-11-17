@@ -100,6 +100,25 @@ async def test_delete_stale_pending_drafts():
     assert await repo.get_draft(kept) is not None
 
 
+async def test_delete_all_pending_drafts_ignores_age():
+    # Two fresh pending drafts + one approved.
+    p1 = await _make_draft("pending one")
+    p2 = await _make_draft("pending two")
+    approved = await _make_draft("approved one")
+    a = await repo.get_draft(approved)
+    await approvals.approve_draft(approved, a.current_version, actor=1)
+
+    # older_than_days=None wipes ALL pending regardless of age, keeps approved.
+    deleted = await repo.delete_stale_pending_drafts(older_than_days=None)
+    assert deleted >= 2  # at least our two fresh pending drafts
+    assert await repo.get_draft(p1) is None
+    assert await repo.get_draft(p2) is None
+    assert await repo.get_draft(approved) is not None
+    # And nothing pending/needs-revision remains at all.
+    assert await repo.list_drafts(status=DraftStatus.PENDING_REVIEW) == []
+    assert await repo.list_drafts(status=DraftStatus.NEEDS_REVISION) == []
+
+
 async def test_manual_publish_fallback():
     did = await _make_draft()
     draft = await repo.get_draft(did)

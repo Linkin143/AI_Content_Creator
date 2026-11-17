@@ -75,6 +75,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "/schedule <id> <ISO time> /publish <id>\n/queue - scheduled posts\n"
         "/connect_status - X / LinkedIn connection status\n"
         "/cleanup - delete pending drafts older than the retention window\n"
+        "/cleanup_all - delete ALL pending drafts now (fresh start)\n"
         "/stats - analytics\n/pause /resume /settings /health"
     )
 
@@ -313,6 +314,22 @@ async def cmd_cleanup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             f"Nothing to clean — no pending drafts older than {days} days.")
 
 
+async def cmd_cleanup_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Delete ALL pending/needs-revision drafts right now, regardless of age.
+
+    For a one-time fresh start. Only un-actioned review cards are removed;
+    approved/scheduled/published/rejected drafts are kept.
+    """
+    if not _authorized(update):
+        return await _deny(update)
+    deleted = await repo.delete_stale_pending_drafts(older_than_days=None)
+    if deleted:
+        await update.message.reply_text(
+            f"🧹 Cleared ALL {deleted} pending draft(s). Fresh start — run /research.")
+    else:
+        await update.message.reply_text("No pending drafts to clear.")
+
+
 async def cmd_connect_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Show which social accounts are connected."""
     if not _authorized(update):
@@ -460,7 +477,7 @@ def build_application() -> Application:
         "stats": cmd_stats, "pause": cmd_pause, "resume": cmd_resume,
         "settings": cmd_settings, "health": cmd_health,
         "pending": cmd_pending, "connect_status": cmd_connect_status,
-        "cleanup": cmd_cleanup,
+        "cleanup": cmd_cleanup, "cleanup_all": cmd_cleanup_all,
     }
     for name, fn in handlers.items():
         app.add_handler(CommandHandler(name, fn))

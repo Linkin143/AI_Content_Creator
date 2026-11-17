@@ -178,22 +178,28 @@ async def update_draft(draft_id: int, **fields) -> Draft | None:
         return draft
 
 
-async def delete_stale_pending_drafts(older_than_days: int = 7) -> int:
-    """Delete PENDING_REVIEW / NEEDS_REVISION drafts older than N days.
+async def delete_stale_pending_drafts(older_than_days: int | None = 7) -> int:
+    """Delete PENDING_REVIEW / NEEDS_REVISION drafts.
+
+    If ``older_than_days`` is an int, only drafts older than that many days are
+    removed; if ``None``, ALL pending/needs-revision drafts are removed regardless
+    of age (used by /cleanup_all for a fresh start).
 
     Also removes their draft_versions, approvals and schedules so no orphan rows
     remain. Published/approved/scheduled/rejected drafts are never touched — only
-    un-actioned review cards expire. Returns the number of drafts deleted."""
+    un-actioned review cards. Returns the number of drafts deleted."""
     from datetime import timedelta
 
     from sqlalchemy import delete as sa_delete
 
-    cutoff = datetime.now(UTC) - timedelta(days=older_than_days)
     stale_states = [DraftStatus.PENDING_REVIEW, DraftStatus.NEEDS_REVISION]
     async with async_session_factory() as session:
-        stmt = select(Draft.id).where(
-            Draft.status.in_(stale_states), Draft.created_at < cutoff)
-        ids = list((await session.execute(stmt)).scalars().all())
+        conds = [Draft.status.in_(stale_states)]
+        if older_than_days is not None:
+            conds.append(Draft.created_at < datetime.now(UTC)
+                         - timedelta(days=older_than_days))
+        ids = list((await session.execute(
+            select(Draft.id).where(*conds))).scalars().all())
         if not ids:
             return 0
         await session.execute(sa_delete(DraftVersion).where(
