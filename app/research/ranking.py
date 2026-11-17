@@ -72,6 +72,14 @@ _INDIA_TERMS = {
     "flipkart", "meity", "indiaai", "rupee", "crore", "upi", "aadhaar",
     "startup india", "make in india", "semiconductor mission",
 }
+# US-relevance signals. The audience cares about India first, but the US market
+# is the second priority (what happens there shapes what reaches India).
+_US_TERMS = {
+    "us", "u.s.", "usa", "america", "american", "silicon valley", "wall street",
+    "openai", "anthropic", "nvidia", "microsoft", "google", "meta", "apple",
+    "amazon", "tesla", "nasdaq", "sec", "white house", "fed", "dollar",
+    "san francisco", "washington",
+}
 
 
 @dataclass
@@ -133,13 +141,24 @@ def score_story(
     trending_hits = sum(1 for t in _TRENDING_TERMS if t in text.lower())
     trending_bonus = min(12.0, trending_hits * 4.0)
 
-    # India bonus: audience is Indian, so an India angle is a strong signal.
+    # India bonus: audience is Indian, so an India angle is the strongest signal
+    # (first priority). Capped at +18.
     india_hits = sum(1 for t in _INDIA_TERMS if t in text.lower())
     india_bonus = min(18.0, india_hits * 9.0)
     # Indian-region sources (Jio/TRAI/startup feeds) get the boost even if the
     # title doesn't literally contain an India keyword.
     if getattr(article, "region", "") == "india":
         india_bonus = max(india_bonus, 12.0)
+
+    # US bonus: the US market is the SECOND priority, so it gets a smaller boost
+    # than India (capped at +10) — keeping India > US > world ordering.
+    us_hits = sum(1 for t in _US_TERMS if t in text.lower())
+    us_bonus = min(10.0, us_hits * 5.0)
+    if getattr(article, "region", "") == "us":
+        us_bonus = max(us_bonus, 7.0)
+    # Never let the US boost rival a genuine India story.
+    if india_bonus > 0:
+        us_bonus = min(us_bonus, india_bonus - 1.0)
 
     base = (
         tech * w["technical_relevance"]
@@ -148,12 +167,13 @@ def score_story(
         + audience * w["audience_relevance"]
         + insight * w["insight_opportunity"]
     )
-    score = min(100.0, base + reliability_bonus + trending_bonus + india_bonus)
+    score = min(100.0, base + reliability_bonus + trending_bonus
+                + india_bonus + us_bonus)
 
     rationale = (
         f"tech={tech:.0f} eng={eng:.0f} fresh={fresh:.0f} "
         f"aud={audience:.0f} insight={insight:.0f} trend+{trending_bonus:.0f} "
-        f"india+{india_bonus:.0f} tier={reliability_tier}"
+        f"india+{india_bonus:.0f} us+{us_bonus:.0f} tier={reliability_tier}"
     )
     return ScoredStory(
         article=article,

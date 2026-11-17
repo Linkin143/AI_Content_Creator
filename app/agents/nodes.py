@@ -366,6 +366,23 @@ def _draft_sources(item: dict) -> list[str]:
     return out
 
 
+def _enforce_x_limit(text: str, limit: int = 280) -> str:
+    """Hard-guarantee a tweet fits the free-tier 280-char cap.
+
+    The skill instructs the model to stay <=280, but this deterministic guard
+    ensures it NEVER exceeds the limit: if it's a thread (blank-line separated),
+    keep the first tweet; then trim on a word boundary with an ellipsis."""
+    text = text.strip()
+    if "\n\n" in text:  # a thread slipped through -> keep the first tweet only
+        text = text.split("\n\n", 1)[0].strip()
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 1]
+    if " " in cut:
+        cut = cut[: cut.rfind(" ")]
+    return cut.rstrip() + "…"
+
+
 def _story_context(item: dict) -> str:
     parts = [
         f"Title: {item.get('title','')}",
@@ -406,7 +423,7 @@ async def generate_x_posts(state: ContentPipelineState) -> dict:
             drafts.append({
                 "platform": "x",
                 "article_url": item.get("url"),
-                "content": result.content.strip(),
+                "content": _enforce_x_limit(result.content.strip()),
                 "sources": _draft_sources(item),
                 "evidence": result.evidence,
                 "verification_status": item.get("verification_status", "REQUIRES_REVIEW"),
@@ -459,12 +476,17 @@ async def editorial_quality_check(state: ContentPipelineState) -> dict:
     all_drafts = state.get("x_drafts", []) + state.get("linkedin_drafts", [])
     reviewed: list[dict] = []
     llm_calls = state.get("llm_calls", 0)
-    limit = get_settings().max_llm_calls_per_run
+
+    # Scoring has its OWN reserved budget (one call per draft, at most ~5), so a
+    # busy research/verify/generation stage can never starve it. Without this,
+    # every draft fell back to the default score (the "60/60/60" bug).
+    scoring_budget = len(all_drafts)
+    scored = 0
 
     for draft in all_drafts:
         enriched = dict(draft)
         quality = 60.0
-        if llm_calls < limit:
+        if scored < scoring_budget:
             content = wrap_untrusted(
                 f"Platform: {draft['platform']}\nPost:\n{draft['content']}\n"
                 f"Evidence: {draft.get('evidence', [])}"
@@ -475,6 +497,7 @@ async def editorial_quality_check(state: ContentPipelineState) -> dict:
                 enriched["quality_issues"] = result.issues
                 enriched["quality_approved"] = result.approved
                 llm_calls += 1
+                scored += 1
         enriched["quality_score"] = quality
         reviewed.append(enriched)
     return {"reviewed_drafts": reviewed, "llm_calls": llm_calls}

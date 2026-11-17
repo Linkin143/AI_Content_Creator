@@ -102,7 +102,7 @@ class Settings(BaseSettings):
 
     # ---- Limits ----
     max_articles_per_run: int = 50
-    max_llm_calls_per_run: int = 20
+    max_llm_calls_per_run: int = 30
     max_x_posts_per_day: int = 3
     max_linkedin_posts_per_week: int = 4
     research_window_hours: int = 24
