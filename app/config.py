@@ -103,7 +103,8 @@ class Settings(BaseSettings):
     # ---- Limits ----
     max_articles_per_run: int = 60
     max_llm_calls_per_run: int = 50
-    max_x_posts_per_day: int = 10
+    max_x_posts_per_day: int = 5
+    max_linkedin_posts_per_day: int = 4
     max_linkedin_posts_per_week: int = 4
     research_window_hours: int = 24
     # Pending/needs-revision drafts are auto-deleted after this many days so the

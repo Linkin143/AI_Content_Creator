@@ -442,8 +442,8 @@ async def generate_linkedin_posts(state: ContentPipelineState) -> dict:
     brand_ctx = _brand_context(await repo.get_brand_profile())
     drafts: list[dict] = []
     llm_calls = state.get("llm_calls", 0)
-    # LinkedIn has its own reserved budget (fewer, deeper posts): up to 3.
-    li_budget = 3
+    # LinkedIn has its own reserved budget (fewer, deeper posts): default 4/day.
+    li_budget = get_settings().max_linkedin_posts_per_day
     made = 0
 
     for item in selected[:li_budget]:
