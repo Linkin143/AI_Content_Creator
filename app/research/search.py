@@ -151,17 +151,21 @@ async def _newsdata(query: str, api_key: str, country: str = "",
     return out
 
 
-# Targeted India / AI queries run as a small supplement to RSS each research run.
-# Each query = 1 credit. 6 queries x a couple runs/day stays well under 200/day.
-# India first (3 queries), US market second (2 queries), world third (1 query).
-# Each query = 1 credit; 6/run stays well under the free tier's 200/day.
+# Targeted queries run as a supplement to RSS each research run, India-weighted:
+# INDIA first (4 queries: tech, trending, startup funding, investment-business),
+# US second (2), world (1), China/Japan (1) = 8 credits/run. A couple of runs a
+# day stays well under the NewsData free tier's 200 credits/day.
 NEWSDATA_INDIA_QUERIES: list[tuple[str, str, str, str]] = [
     # (query, country, category, region)
-    # --- INDIA (first priority) ---
-    ("Jio OR Reliance OR TRAI OR telecom India", "in", "india_tech_news", "india"),
-    ("India AI OR IndiaAI OR India startup funding", "in", "india_tech_news", "india"),
-    ("India IT OR Infosys OR TCS OR semiconductor India OR ISRO", "in",
+    # --- INDIA (first priority: tech, trending, investment-business) ---
+    ("India AI OR IndiaAI OR India startup funding OR unicorn India", "in",
      "india_tech_news", "india"),
+    ("India tech OR Jio OR Reliance OR TRAI OR Infosys OR TCS OR ISRO", "in",
+     "india_tech_news", "india"),
+    ("India startup OR Series A OR Series B OR funding round OR IPO India", "in",
+     "india_business_news", "india"),
+    ("India investment OR SEBI OR RBI OR Nifty OR Sensex OR FDI OR fintech India",
+     "in", "india_business_news", "india"),
     # --- US (second priority) ---
     ("OpenAI OR Nvidia OR Microsoft OR Google AI OR US tech funding", "us",
      "us_tech_news", "us"),

@@ -71,6 +71,12 @@ _INDIA_TERMS = {
     "infosys", "tcs", "wipro", "hcl", "zoho", "ola", "paytm", "zomato",
     "flipkart", "meity", "indiaai", "rupee", "crore", "upi", "aadhaar",
     "startup india", "make in india", "semiconductor mission",
+    # India investment / business / trending signals (what the owner wants more of)
+    "swiggy", "nykaa", "phonepe", "razorpay", "cred", "groww", "zerodha",
+    "byju", "meesho", "sebi", "rbi", "nifty", "sensex", "adani", "tata",
+    "mahindra", "vedanta", "funding round", "series a", "series b", "unicorn",
+    "lakh crore", "fdi", "ipo india", "d2c", "fintech india", "gcc",
+    "digital india", "pli scheme", "india stack", "ondc",
 }
 # US-relevance signals. The audience cares about India first, but the US market
 # is the second priority (what happens there shapes what reaches India).
@@ -150,9 +156,10 @@ def score_story(
     trending_bonus = min(12.0, trending_hits * 4.0)
 
     # India bonus: audience is Indian, so an India angle is the strongest signal
-    # (first priority). Capped at +18.
+    # (first priority). Weighted heavily and capped at +24 so India tech /
+    # trending / investment-business stories clearly dominate the ranking.
     india_hits = sum(1 for t in _INDIA_TERMS if t in text.lower())
-    india_bonus = min(18.0, india_hits * 9.0)
+    india_bonus = min(24.0, india_hits * 10.0)
     # Indian-region sources (Jio/TRAI/startup feeds) get the boost even if the
     # title doesn't literally contain an India keyword.
     if getattr(article, "region", "") == "india":

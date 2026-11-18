@@ -82,9 +82,18 @@ resource, or journey story) that builds professional credibility.
 - If it reads like a generic influencer caption or a ChatGPT answer, throw it out
   and rewrite it as real, human analysis.
 
+## LinkedIn is NOT a longer tweet — keep them totally different
+- The system feeds LinkedIn DIFFERENT stories than X, and LinkedIn is a different
+  product: a proper **business case study / resource / journey** with structure,
+  real numbers, and a transferable lesson. It is never a stretched-out version of
+  a hot take. If your draft reads like "the tweet, but longer", rewrite it as
+  genuine analysis with a situation → decision → outcome → lesson arc.
+- Different opening, different structure, different depth from any tweet. A reader
+  who saw the X post should still find NEW value and NEW framing here.
+
 ## Hard rules
-- Must NOT duplicate the X post word-for-word — LinkedIn gets depth, structure,
-  and the business/case-study framing.
+- Must NOT duplicate or merely expand an X post — LinkedIn gets its own story,
+  depth, structure, and the business/case-study framing.
 
 ## Operational constraints
 - Use only verified facts. Attribute the source.

@@ -289,8 +289,12 @@ async def technical_analysis(state: ContentPipelineState) -> dict:
     skill = load_skill("technical_analysis")
     analyzed: list[dict] = []
     llm_calls = state.get("llm_calls", 0)
-    limit = get_settings().max_llm_calls_per_run
-    top = ranked[: state.get("max_posts", 3) + 2]
+    settings = get_settings()
+    limit = settings.max_llm_calls_per_run
+    # Deep-analyze enough stories to cover BOTH platforms (X + LinkedIn) plus a
+    # small buffer, so LinkedIn's distinct stories also get business implications.
+    top_n = state.get("max_posts", 3) + settings.max_linkedin_posts_per_day + 2
+    top = ranked[:top_n]
 
     for item in top:
         enriched = dict(item)
@@ -335,7 +339,13 @@ async def select_content(state: ContentPipelineState) -> dict:
     raw = [_to_raw({k: v for k, v in item.items() if k in RawArticle.__annotations__})
            for item in eligible]
     scored = rank_stories(raw, window_hours=state.get("research_window_hours", 24))
-    diverse = select_diverse(scored, limit=state.get("max_posts", 3))
+
+    # Select enough DISTINCT stories to cover BOTH platforms without overlap:
+    # X gets the first x_budget, LinkedIn gets the next li_budget (different
+    # stories). This stops LinkedIn from being a longer copy of the X tweet.
+    x_budget = max(1, state.get("max_posts", 3))
+    li_budget = get_settings().max_linkedin_posts_per_day
+    diverse = select_diverse(scored, limit=x_budget + li_budget)
     by_url = {item.get("url"): item for item in eligible}
     selected = [by_url.get(s.article.url, {}) for s in diverse if s.article.url in by_url]
     return {"selected": selected}
@@ -408,10 +418,11 @@ async def generate_x_posts(state: ContentPipelineState) -> dict:
     llm_calls = state.get("llm_calls", 0)
     # Generation has its OWN reserved budget (one call per post we want), so a
     # busy research/verify stage can never starve drafting. Default: max_posts.
+    # X takes the TOP x_budget stories; LinkedIn takes the NEXT ones (no overlap).
     x_budget = max(1, state.get("max_posts", 3))
     made = 0
 
-    for item in selected:
+    for item in selected[:x_budget]:
         if made >= x_budget:
             break
         content = wrap_untrusted(_story_context(item))
@@ -443,10 +454,18 @@ async def generate_linkedin_posts(state: ContentPipelineState) -> dict:
     drafts: list[dict] = []
     llm_calls = state.get("llm_calls", 0)
     # LinkedIn has its own reserved budget (fewer, deeper posts): default 4/day.
+    # It covers DIFFERENT stories from X: skip the first x_budget (X's stories)
+    # and take the next li_budget, so LinkedIn is never a longer copy of a tweet.
     li_budget = get_settings().max_linkedin_posts_per_day
+    x_budget = max(1, state.get("max_posts", 3))
+    li_pool = selected[x_budget:x_budget + li_budget]
+    # Fallback: if there weren't enough distinct stories, reuse from the top so
+    # we still produce LinkedIn drafts (rare, only on very thin news days).
+    if not li_pool:
+        li_pool = selected[:li_budget]
     made = 0
 
-    for item in selected[:li_budget]:
+    for item in li_pool:
         if made >= li_budget:
             break
         content = wrap_untrusted(_story_context(item))

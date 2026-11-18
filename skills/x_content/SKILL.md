@@ -40,6 +40,13 @@ Turn a fresh, verified story into ONE scroll-stopping X post — ideally with an
 - `evidence`: the specific facts used and the source URL(s) supporting them
   (URLs go here, not in the tweet body).
 
+## X is NOT LinkedIn — keep them totally different
+A tweet is a **punchy, standalone hot take** — a single sharp thought, a bit of
+wit, maybe one surprising number. It is NOT a shrunk-down case study and NOT a
+summary of a longer post. LinkedIn does the deep business analysis; X does the
+quick, scroll-stopping reaction. Different format, different energy, different
+sentences. Never write a tweet that reads like the first paragraph of an article.
+
 ## The winning structure (use this)
 1. **Hook (line 1):** a specific, surprising, or contrarian opening that creates
    curiosity or stakes. Lead with the single most striking fact, number, or
