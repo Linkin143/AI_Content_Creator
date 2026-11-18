@@ -83,3 +83,19 @@ def test_select_diverse_limits():
     scored = rank_stories(arts, window_hours=48)
     selected = select_diverse(scored, limit=3)
     assert len(selected) == 3
+
+
+def test_newsdata_rotating_queries_are_india_weighted():
+    from app.research.search import (
+        NEWSDATA_INDIA_CORE,
+        _rotating_newsdata_queries,
+    )
+    qs = _rotating_newsdata_queries()
+    # Core India queries always present.
+    for core in NEWSDATA_INDIA_CORE:
+        assert core in qs
+    # India stays the majority of the query set.
+    india = [q for q in qs if q[3] == "india"]
+    assert len(india) >= len(qs) - len(india)  # India >= rest
+    # Reasonable, credit-safe size.
+    assert 6 <= len(qs) <= 10

@@ -151,21 +151,42 @@ async def _newsdata(query: str, api_key: str, country: str = "",
     return out
 
 
-# Targeted queries run as a supplement to RSS each research run, India-weighted:
-# INDIA first (4 queries: tech, trending, startup funding, investment-business),
-# US second (2), world (1), China/Japan (1) = 8 credits/run. A couple of runs a
-# day stays well under the NewsData free tier's 200 credits/day.
-NEWSDATA_INDIA_QUERIES: list[tuple[str, str, str, str]] = [
-    # (query, country, category, region)
-    # --- INDIA (first priority: tech, trending, investment-business) ---
-    ("India AI OR IndiaAI OR India startup funding OR unicorn India", "in",
+# NewsData runs on EVERY research. To get real VARIETY (not the same stories each
+# run), India queries are drawn from a rotating pool: the 2 fixed "core" India
+# queries always run, plus a rotating slice of the India variety pool that shifts
+# each run. US / world / China-Japan are fixed. Budget stays ~8 credits/run, well
+# under the free tier's 200/day even at several runs daily.
+
+# Always run (India tech + India investment-business signal).
+NEWSDATA_INDIA_CORE: list[tuple[str, str, str, str]] = [
+    ("India AI OR IndiaAI OR India tech OR Jio OR Reliance OR TRAI", "in",
      "india_tech_news", "india"),
-    ("India tech OR Jio OR Reliance OR TRAI OR Infosys OR TCS OR ISRO", "in",
-     "india_tech_news", "india"),
-    ("India startup OR Series A OR Series B OR funding round OR IPO India", "in",
-     "india_business_news", "india"),
-    ("India investment OR SEBI OR RBI OR Nifty OR Sensex OR FDI OR fintech India",
+    ("India startup OR funding round OR unicorn India OR IPO India OR SEBI OR RBI",
      "in", "india_business_news", "india"),
+]
+
+# Rotating India variety pool — a different 2 are picked each run for freshness.
+NEWSDATA_INDIA_VARIETY: list[tuple[str, str, str, str]] = [
+    ("India semiconductor OR chip India OR electronics manufacturing OR PLI scheme",
+     "in", "india_tech_news", "india"),
+    ("India EV OR electric vehicle India OR Ola Electric OR Tata EV OR Ather", "in",
+     "india_tech_news", "india"),
+    ("Infosys OR TCS OR Wipro OR HCL OR India IT results OR GCC India", "in",
+     "india_business_news", "india"),
+    ("UPI OR ONDC OR digital India OR India Stack OR Aadhaar OR fintech India", "in",
+     "india_tech_news", "india"),
+    ("ISRO OR India space OR space startup India OR satellite India", "in",
+     "india_tech_news", "india"),
+    ("India AI model OR India data centre OR India cloud OR enterprise AI India",
+     "in", "india_tech_news", "india"),
+    ("Nifty OR Sensex OR India markets OR FDI India OR India economy tech", "in",
+     "india_business_news", "india"),
+    ("Swiggy OR Zomato OR Paytm OR PhonePe OR Flipkart OR Meesho OR Nykaa", "in",
+     "india_business_news", "india"),
+]
+
+# Fixed non-India slice (kept minor vs India).
+NEWSDATA_OTHER: list[tuple[str, str, str, str]] = [
     # --- US (second priority) ---
     ("OpenAI OR Nvidia OR Microsoft OR Google AI OR US tech funding", "us",
      "us_tech_news", "us"),
@@ -179,11 +200,31 @@ NEWSDATA_INDIA_QUERIES: list[tuple[str, str, str, str]] = [
      "china_japan_tech", "global"),
 ]
 
+# Kept for backward-compat / tests that import the old name.
+NEWSDATA_INDIA_QUERIES = NEWSDATA_INDIA_CORE + NEWSDATA_INDIA_VARIETY[:2] + NEWSDATA_OTHER
+
+
+def _rotating_newsdata_queries() -> list[tuple[str, str, str, str]]:
+    """Build this run's query set: fixed India core + a rotating India variety
+    slice (shifts each run so stories stay fresh) + fixed US/world/CJ."""
+    import time
+
+    pool = NEWSDATA_INDIA_VARIETY
+    if pool:
+        # Shift the window each run (changes with the hour) for genuine variety.
+        start = int(time.time() // 3600) % len(pool)
+        rotating = [pool[(start + i) % len(pool)] for i in range(2)]
+    else:
+        rotating = []
+    return NEWSDATA_INDIA_CORE + rotating + NEWSDATA_OTHER
+
 
 async def newsdata_india_boost() -> list[RawArticle]:
-    """Run the targeted NewsData query set. Empty unless provider=newsdata is set.
+    """Run the targeted NewsData query set on every research. Empty unless
+    provider=newsdata is configured.
 
-    Credit-safe: bounded to len(NEWSDATA_INDIA_QUERIES) credits per call.
+    India-weighted with a rotating variety pool so each run surfaces fresh
+    stories. Credit-safe: bounded to the number of queries per call (~8).
     """
     settings = get_settings()
     if not settings.feature_enabled("search"):
@@ -192,6 +233,6 @@ async def newsdata_india_boost() -> list[RawArticle]:
         return []
     key = settings.search_api_key
     collected: list[RawArticle] = []
-    for query, country, category, region in NEWSDATA_INDIA_QUERIES:
+    for query, country, category, region in _rotating_newsdata_queries():
         collected.extend(await _newsdata(query, key, country, category, region))
     return collected
