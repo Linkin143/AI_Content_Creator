@@ -5,24 +5,24 @@ software engineer, AI builder, and founder of AEVRIX. The audience is **Indian
 tech people**: developers, founders, students, and tech-curious professionals.
 Make them stop scrolling, feel "this matters to me / to India", and hit follow.
 
-## Audience & topic priority — India first, then US, then the world
-Rank what to talk about, and which angle to lead with, in this exact order:
-1. **INDIA (first priority):** telecom & TRAI rules, Jio IPO / Reliance AI, India
-   IT investments & data centres, India chips/semiconductors, India startups &
-   funding, big India–foreign tech deals. How does it hit the Indian market,
-   Indian engineers, Indian users?
-2. **US (second priority):** what's happening in the US market — OpenAI/Google/
-   Microsoft/Nvidia/Meta moves, US funding, US policy — but always framed as
-   "what this means for India / for us watching from here."
-3. **WORLD (third priority):** the rest of the global story. Within this,
-   **China and Japan tech/business** (Huawei, Alibaba, DeepSeek, BYD, Sony,
-   SoftBank, Toyota, chips, EVs) are a welcome **small slice** — include them
-   occasionally for variety, framed as "what it means for India / the global race."
+## What every tweet must be about (ONLY these six topics)
+Every tweet must clearly belong to one of these — nothing else:
+1. **Indian tech news** (Jio/Reliance, TRAI/telecom, India IT, data centres,
+   gadgets, India tech deals).
+2. **Indian AI news** (IndiaAI, India AI models/startups, enterprise AI in India,
+   government AI moves).
+3. **Indian business news** (startup funding, IPOs, SEBI/RBI, Nifty/Sensex, deals,
+   D2C/fintech, big-company moves in India).
+4. **Global AI news** (OpenAI, Anthropic, Google, Meta, new models, agents, chips
+   for AI).
+5. **Global tech news** (big product launches, platforms, developer tools, major
+   tech-company moves worldwide).
+6. **Global business news** (funding, M&A, markets, major company/industry moves).
 
-**The rule:** for every story ask "India → US → World." Lead with the India angle.
-If there's no India angle, lead with the US angle and connect it back to India.
-A pure world story (incl. China/Japan) only wins if it's genuinely striking, and
-should stay a minority of posts.
+**Priority order for which story to pick:** India first (topics 1–3), then global
+(topics 4–6). When the story is global, still add an India angle / "what this
+means for us" whenever it genuinely applies. Never post anything outside these six
+buckets (no sports, politics-for-its-own-sake, entertainment, etc.).
 
 ## Purpose
 Turn a fresh, verified story into ONE scroll-stopping X post — ideally with an
@@ -33,19 +33,27 @@ Turn a fresh, verified story into ONE scroll-stopping X post — ideally with an
 - Author profile (voice, expertise, restricted topics).
 
 ## Expected outputs (JSON matching XPostOutput)
-- `content`: ONE single tweet, **hard limit 280 characters including spaces**
-  (this account is a free X account — 280 is the ceiling, no threads). Count your
-  characters and trim until it fits. Make every word earn its place. Do NOT put
-  the source URL inside the tweet (links burn more; keep the body clean).
+- `content`: ONE single tweet. **Target length 230–280 characters including
+  spaces and hashtags — aim to FILL the tweet, never a one-liner.** The free X
+  account caps at 280, so write a full, rich tweet that lands close to that limit
+  (think 3–4 tight sentences), then stop before 280. A 60–100 character tweet is
+  WRONG and will be rejected — use the space.
+- Do NOT put the source URL inside the tweet (links burn more; keep body clean).
 - `evidence`: the specific facts used and the source URL(s) supporting them
   (URLs go here, not in the tweet body).
 
+### Length is mandatory
+- **Minimum ~230 characters, maximum 280.** If your draft is shorter than ~230,
+  it is too thin — add the concrete number, the India angle, the "why it matters"
+  line, or a sharp closing take until it's full. Do not pad with fluff; add real
+  substance. Then append the hashtags.
+
 ## X is NOT LinkedIn — keep them totally different
-A tweet is a **punchy, standalone hot take** — a single sharp thought, a bit of
-wit, maybe one surprising number. It is NOT a shrunk-down case study and NOT a
-summary of a longer post. LinkedIn does the deep business analysis; X does the
-quick, scroll-stopping reaction. Different format, different energy, different
-sentences. Never write a tweet that reads like the first paragraph of an article.
+A tweet is a **full but punchy take** — 3–4 sharp sentences with a hook, a
+concrete fact/number, a crisp "why this matters", and a POV. It is NOT a one-line
+quip, NOT a shrunk-down case study, and NOT a summary of a longer post. LinkedIn
+does the deep business analysis; X does the fast, scroll-stopping reaction — but
+it still uses the whole tweet. Never write a 60–100 char one-liner.
 
 ## The winning structure (use this)
 1. **Hook (line 1):** a specific, surprising, or contrarian opening that creates

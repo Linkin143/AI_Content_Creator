@@ -422,13 +422,30 @@ async def generate_x_posts(state: ContentPipelineState) -> dict:
     x_budget = max(1, state.get("max_posts", 3))
     made = 0
 
+    sys_prompt = f"{skill.instructions}\n\nAUTHOR PROFILE:\n{brand_ctx}"
     for item in selected[:x_budget]:
         if made >= x_budget:
             break
         content = wrap_untrusted(_story_context(item))
-        result = await call_structured(
-            f"{skill.instructions}\n\nAUTHOR PROFILE:\n{brand_ctx}", content, XPostOutput,
-        )
+        result = await call_structured(sys_prompt, content, XPostOutput)
+        llm_calls += 1 if result is not None else 0
+        # Enforce a FULL tweet: if the model returned a thin one-liner, retry once
+        # with an explicit "fill the tweet" nudge (tweets must be ~230-280 chars).
+        if (result is not None and result.content.strip()
+                and len(_enforce_x_limit(result.content.strip())) < 200):
+            retry = await call_structured(
+                sys_prompt
+                + "\n\nIMPORTANT: Your previous attempt was too short. Rewrite it "
+                "as a FULL tweet of 230-280 characters (including hashtags): add "
+                "the concrete number, the India angle, a 'why it matters' line and "
+                "a sharp closing take. End with 1-2 relevant hashtags.",
+                content, XPostOutput,
+            )
+            if retry is not None and retry.content.strip():
+                llm_calls += 1
+                if len(_enforce_x_limit(retry.content.strip())) > \
+                        len(_enforce_x_limit(result.content.strip())):
+                    result = retry
         if result is not None and result.content.strip():
             made += 1
             drafts.append({
@@ -440,7 +457,6 @@ async def generate_x_posts(state: ContentPipelineState) -> dict:
                 "verification_status": item.get("verification_status", "REQUIRES_REVIEW"),
                 "title": item.get("title", ""),
             })
-            llm_calls += 1
     return {"x_drafts": drafts, "llm_calls": llm_calls}
 
 
