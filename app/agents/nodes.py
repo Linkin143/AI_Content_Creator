@@ -377,20 +377,43 @@ def _draft_sources(item: dict) -> list[str]:
 
 
 def _enforce_x_limit(text: str, limit: int = 280) -> str:
-    """Hard-guarantee a tweet fits the free-tier 280-char cap.
+    """Guarantee a tweet fits 280 chars AND still reads as a complete thought.
 
-    The skill instructs the model to stay <=280, but this deterministic guard
-    ensures it NEVER exceeds the limit: if it's a thread (blank-line separated),
-    keep the first tweet; then trim on a word boundary with an ellipsis."""
+    Never mid-word-chops with an ellipsis (that looks "cut off"). If the model
+    returns an over-length tweet, trim it back to the last COMPLETE sentence that
+    fits; any trailing hashtags are preserved and re-appended so the tweet still
+    ends cleanly."""
+    import re
+
     text = text.strip()
-    if "\n\n" in text:  # a thread slipped through -> keep the first tweet only
+    if "\n\n" in text:  # a thread slipped through -> keep the first block only
         text = text.split("\n\n", 1)[0].strip()
     if len(text) <= limit:
         return text
-    cut = text[: limit - 1]
-    if " " in cut:
-        cut = cut[: cut.rfind(" ")]
-    return cut.rstrip() + "…"
+
+    # Separate trailing hashtags so we can keep them after trimming the body.
+    tags = re.findall(r"#\w+", text)
+    tag_str = (" " + " ".join(tags)) if tags else ""
+    body = re.sub(r"(\s*#\w+)+\s*$", "", text).strip()
+
+    budget = limit - len(tag_str)
+    # Prefer trimming to the last complete sentence that fits the budget.
+    sentences = re.split(r"(?<=[.!?])\s+", body)
+    kept = ""
+    for s in sentences:
+        candidate = (kept + " " + s).strip() if kept else s
+        if len(candidate) <= budget:
+            kept = candidate
+        else:
+            break
+    if not kept:
+        # One long run-on sentence: trim on a word boundary, no ellipsis, and end
+        # on sentence-like punctuation if we can; otherwise just a clean word cut.
+        cut = body[:budget]
+        if " " in cut:
+            cut = cut[: cut.rfind(" ")]
+        kept = cut.rstrip().rstrip(",;:—-").rstrip()
+    return (kept + tag_str).strip()
 
 
 def _story_context(item: dict) -> str:

@@ -54,15 +54,23 @@ async def test_mock_x_publish_records(monkeypatch):
     assert await repo.published_exists(did, draft.current_version)
 
 
-def test_enforce_x_limit_truncates_and_keeps_first_tweet():
+def test_enforce_x_limit_keeps_complete_sentences_no_ellipsis():
     from app.agents.nodes import _enforce_x_limit
     # Short post is unchanged.
     assert _enforce_x_limit("short tweet") == "short tweet"
-    # Over-length post is trimmed to <= 280 on a word boundary.
-    long_text = "word " * 100  # 500 chars
-    out = _enforce_x_limit(long_text)
+    # Over-length: trim to the last COMPLETE sentence that fits, no ellipsis.
+    many = " ".join([f"Sentence number {i} about India AI." for i in range(30)])
+    out = _enforce_x_limit(many)
     assert len(out) <= 280
-    # A thread (blank-line separated) is reduced to the first tweet only.
+    assert "…" not in out and "..." not in out
+    assert out.endswith(".")  # ends on a finished sentence
+    # Trailing hashtags are preserved after trimming the body.
+    long_body = ("India's AI story keeps getting bigger and bigger every "
+                 "single quarter now. ") * 5 + "#AI #India"
+    out2 = _enforce_x_limit(long_body)
+    assert len(out2) <= 280
+    assert out2.endswith("#India")
+    # A thread (blank-line separated) is reduced to the first block only.
     thread = "First tweet here.\n\nSecond tweet here.\n\nThird."
     assert _enforce_x_limit(thread) == "First tweet here."
 

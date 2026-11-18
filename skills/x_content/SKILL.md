@@ -42,11 +42,19 @@ Turn a fresh, verified story into ONE scroll-stopping X post — ideally with an
 - `evidence`: the specific facts used and the source URL(s) supporting them
   (URLs go here, not in the tweet body).
 
-### Length is mandatory
-- **Minimum ~230 characters, maximum 280.** If your draft is shorter than ~230,
-  it is too thin — add the concrete number, the India angle, the "why it matters"
-  line, or a sharp closing take until it's full. Do not pad with fluff; add real
-  substance. Then append the hashtags.
+### Length is mandatory — and it must read COMPLETE
+- **Write 200–280 characters (including hashtags). Aim for the 240–275 range.**
+  280 is a CAP, not a target to overshoot. Write a tweet that is already a
+  complete, self-contained thought UNDER 280 — never write past 280 and never
+  rely on it being trimmed.
+- **It must NOT look cut off.** The tweet must end on a finished sentence with
+  real punctuation (. ! ?) followed by the hashtags. Never end mid-sentence,
+  never trail off, and NEVER use "…" or "..." to suggest more is coming.
+- If your draft is under ~200 chars it's too thin — add the concrete number, the
+  India angle, the "why it matters" line, or a sharp closing take (real substance,
+  not filler) until it's full, then finish the sentence cleanly and add hashtags.
+- Count characters before finishing. If you're over 280, SHORTEN the wording to a
+  complete shorter sentence — do not just chop the end.
 
 ## X is NOT LinkedIn — keep them totally different
 A tweet is a **full but punchy take** — 3–4 sharp sentences with a hook, a
